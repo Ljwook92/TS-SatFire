@@ -66,19 +66,23 @@ from satimg_dataset_processor.data_generator_torch import Normalize,FireDataset
 from sklearn.metrics import f1_score, jaccard_score
 import pandas as pd
 
-root_path = '/home/z/h/zhao2/TS-SatFire/dataset/'
+root_path = "/home/jlc3q/data/SatFire/dataset"
+ROOT_DIR = os.path.expanduser("~/data/SatFire/")
+CHECKPOINT_DIR = os.path.join(ROOT_DIR, "checkpoints")
+os.makedirs(CHECKPOINT_DIR, exist_ok=True)
+
+EVAL_DIR = os.path.join(ROOT_DIR, "evaluation_plot")
+os.makedirs(EVAL_DIR, exist_ok=True)
 
 def wandb_config(model_name, num_heads, hidden_size, batch_size):
-    wandb.login()
-    # wandb.init(project="tokenized_window_size" + str(window_size) + str(model_name) + 'run' + str(run), entity="zhaoyutim")
-    wandb.init(project="afba_"+model_name+"_grid_search", entity="zhaoyutim")
-    wandb.run.name = f'num_heads_{num_heads}_hidden_size_{hidden_size}_batchsize_{batch_size}_attention_{attn_version}_seed_{SEED}'
-    wandb.config = {
+    wandb.init(project="afba_"+model_name+"_grid_search")
+    wandb.run.name = f"num_heads_{num_heads}_hidden_size_{hidden_size}_batchsize_{batch_size}"
+    wandb.config.update({
         "learning_rate": learning_rate,
         "weight_decay": weight_decay,
         "epochs": MAX_EPOCHS,
         "batch_size": batch_size,
-    }
+    })
 
 
 
@@ -216,7 +220,7 @@ if not train:
 
         # Save top N epoches. 
         if (len(best_checkpoints) < top_n_checkpoints or val_loss < best_checkpoints[0][0]) and epoch>=50:
-            save_path = f"saved_models/model_{model_name}_run_{run}_seed_{SEED}_mode_{mode}_num_heads_{num_heads}_hidden_size_{hidden_size}_batchsize_{batch_size}_checkpoint_epoch_{epoch + 1}_nc_{n_channel}_ts_{ts_length}_attention_{attn_version}_seed_{SEED}.pth"
+            save_path = os.path.join(CHECKPOINT_DIR, f"model_{model_name}_run_{run}_seed_{SEED}_mode_{mode}_num_heads_{num_heads}_hidden_size_{hidden_size}_batchsize_{batch_size}_checkpoint_epoch_{epoch+1}_nc_{n_channel}_ts_{ts_length}_attention_{attn_version}.pth")
 
             if len(best_checkpoints) == top_n_checkpoints:
                 _, remove_checkpoint = heapq.heappop(best_checkpoints)
@@ -247,7 +251,7 @@ else:
     if mode != 'af':
         dfs=[]
         for year in ['2021']:
-            filename = '~/CalFireMonitoring/roi/us_fire_' + year + '_out_new.csv'
+            filename = os.path.join("roi", f"us_fire_{year}_out_new.csv")
             df = pd.read_csv(filename)
             dfs.append(df)
         df = pd.concat(dfs, ignore_index=True)
@@ -282,7 +286,7 @@ else:
         
         # Load the model checkpoint
         load_epoch = args.epoch
-        load_path = f"saved_models/model_{model_name}_mode_{mode}_num_heads_{num_heads}_hidden_size_{hidden_size}_batchsize_{batch_size}_checkpoint_epoch_{load_epoch}_nc_{n_channel}_ts_{ts_length}.pth"
+        load_path = os.path.join(CHECKPOINT_DIR, f"model_{model_name}_run_{run}_seed_{SEED}_mode_{mode}_num_heads_{num_heads}_hidden_size_{hidden_size}_batchsize_{batch_size}_checkpoint_epoch_{load_epoch}_nc_{n_channel}_ts_{ts_length}_attention_{attn_version}.pth")
 
         checkpoint = torch.load(load_path)
         model.load_state_dict(checkpoint['model_state_dict'])
@@ -346,7 +350,8 @@ else:
                     plt.imshow(img_fn, cmap='brg', interpolation='nearest')
                     plt.axis('off')
 
-                    plt.savefig('evaluation_plot/model_{}_task_{}_id_{}_nhead_{}_hidden_{}_nbatch_{}_nts_{}_ts_{}_nc_{}.png'.format(model_name, mode, id, num_heads, hidden_size, j, k, i, n_channel), bbox_inches='tight')
+                    save_name = 'model_{}_task_{}_id_{}_nhead_{}_hidden_{}_nbatch_{}_nts_{}_ts_{}_nc_{}.png'.format(model_name, mode, id, num_heads, hidden_size, j, k, i, n_channel)
+                    plt.savefig(os.path.join(EVAL_DIR, save_name), bbox_inches='tight')
                     plt.show()
                     plt.close()
         iou_all += iou/length
@@ -355,5 +360,4 @@ else:
         # print('ID{} F1 Score of the whole TS:{}'.format(id, f1/length))
         print('{},{},{}'.format(id, f1/length, iou/length))
     print('model F1 Score: {} and iou score: {}'.format(f1_all/len(ids), iou_all/len(ids)))
-
 

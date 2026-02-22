@@ -1,7 +1,7 @@
 import argparse
 import os
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3' 
-os.environ["CUDA_VISIBLE_DEVICES"]="9"
+# os.environ["CUDA_VISIBLE_DEVICES"]="9"
 import random
 import numpy as np
 import tensorflow as tf
@@ -24,8 +24,13 @@ from temporal_models.gru.gru_model import GRUModel
 from temporal_models.lstm.lstm_model import LSTMModel
 from temporal_models.t4fire import t4fire
 from sklearn.metrics import f1_score, jaccard_score
-root_path = '/home/z/h/zhao2/TS-SatFire/dataset/'
-save_path = '/home/z/h/zhao2/TS-SatFire/checkpoints/'
+
+ROOT_DIR = os.path.expanduser("~/data/SatFire/")
+DATASET_DIR = os.path.join(ROOT_DIR, "dataset")
+CHECKPOINT_DIR = os.path.join(ROOT_DIR, "checkpoints")
+os.makedirs(CHECKPOINT_DIR, exist_ok=True)
+
+root_path = DATASET_DIR
 
 MAX_EPOCHS = 50
 def wandb_config(model_name, run, num_heads, num_layers, mlp_dim, hidden_size):
@@ -207,5 +212,5 @@ if __name__=='__main__':
             wandb.log({'epoch': epoch})
 
             val_acc_metric.reset_states()
-        model.save(os.path.join('saved_models', 'af_'+model_name+'w' + str(1) + '_nopretrained'+'_run'+str(run)+'_'+str(num_heads)+'_'+str(mlp_dim)
+        model.save(os.path.join(CHECKPOINT_DIR, 'af_'+model_name+'w' + str(1) + '_nopretrained'+'_run'+str(run)+'_'+str(num_heads)+'_'+str(mlp_dim)
                                 +'_'+str(hidden_size)+'_'+str(num_layers)+'_'+str(batch_size)+'_'+str(is_masked)+'_l'+str(ts_length)))

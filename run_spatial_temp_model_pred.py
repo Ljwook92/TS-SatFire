@@ -26,6 +26,8 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import pathlib
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
 
 def wandb_config(model_name, num_heads, hidden_size, batch_size, wandb_user_name):
     wandb.login()
@@ -84,9 +86,12 @@ if __name__=='__main__':
     train = args.binary_flag
     target_is_single_day = True
         
-    root_dir = "/home/z/h/zhao2/TS-SatFire/"
+    # root_dir = "/home/jlc3q/data/SatFire/ts-satfire/"
     wandb_user_name = "zhaoyutim"
-    root_path = f"{root_dir}/dataset/"
+    # root_path = f"{root_dir}/dataset/"
+   
+    root_dir = os.path.expanduser("~/data/SatFire")
+    root_path = os.path.join(root_dir, "dataset")
    
     
     # Dataloader
@@ -272,7 +277,7 @@ if __name__=='__main__':
     if train or test_after_train:
         dfs=[]
         for year in ['2021']:
-            filename = '~/CalFireMonitoring/roi/us_fire_' + year + '_out_new.csv'
+            filename = os.path.join(BASE_DIR, 'roi', f'us_fire_{year}_out_new.csv')
             df = pd.read_csv(filename)
             dfs.append(df)
         df = pd.concat(dfs, ignore_index=True)
@@ -281,7 +286,10 @@ if __name__=='__main__':
         ids = ids.values.astype(str)
         
         load_epoch = 199
-        load_path = f"saved_models/model_{model_name}_mode_{mode}_num_heads_{num_heads}_hidden_size_{hidden_size}_batchsize_{batch_size}_checkpoint_epoch_{load_epoch}_nc_{n_channel}_ts_{ts_length}.pth"
+        load_path = os.path.join(
+            BASE_DIR,
+            "saved_models",
+            f"model_{model_name}_mode_{mode}_num_heads_{num_heads}_hidden_size_{hidden_size}_batchsize_{batch_size}_checkpoint_epoch_{load_epoch}_nc_{n_channel}_ts_{ts_length}.pth")
 
         checkpoint = torch.load(load_path)
         model.load_state_dict(checkpoint['model_state_dict'])
@@ -362,4 +370,3 @@ if __name__=='__main__':
         print('model F1 Score: {} and iou score: {}'.format(f1_all/len(ids), iou_all/len(ids)))
         
         wandb.log({"test_f1": f1_all/len(ids), "test_iou": iou_all/len(ids)})
-

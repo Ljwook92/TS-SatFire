@@ -23,12 +23,15 @@ from satimg_dataset_processor.data_generator_torch import Normalize, FireDataset
 from sklearn.metrics import f1_score, jaccard_score
 import pandas as pd
 
-root_path = '/home/z/h/zhao2/TS-SatFire/dataset/'
+ROOT_DIR = os.path.expanduser("~/data/SatFire/")
+CHECKPOINT_DIR = os.path.join(ROOT_DIR, "checkpoints")
+os.makedirs(CHECKPOINT_DIR, exist_ok=True)
+os.makedirs("evaluation_plot", exist_ok=True)
+
+root_path = '/home/jlc3q/data/SatFire/dataset/'
 
 def wandb_config(model_name, num_heads, hidden_size, batch_size):
-    wandb.login()
-    # wandb.init(project="tokenized_window_size" + str(window_size) + str(model_name) + 'run' + str(run), entity="zhaoyutim")
-    wandb.init(project="afba_"+model_name+"_grid_search", entity="zhaoyutim")
+    wandb.init(project="afba_"+model_name+"_grid_search")
     wandb.run.name = 'num_heads_' + str(num_heads) +'hidden_size_'+str(hidden_size)+'batchsize_'+str(batch_size)
     wandb.config = {
         "learning_rate": learning_rate,
@@ -139,6 +142,7 @@ if __name__=='__main__':
             for i, batch in enumerate(train_bar):
                 data_batch = batch['data']
                 labels_batch = batch['labels']
+                print("DEBUG SHAPE:", data_batch.shape)
                 b, c, w, h = data_batch.shape
                 data_batch = torch.reshape(data_batch, (b, c, w, h))
                 labels_batch = torch.reshape(labels_batch, (b, num_classes, w, h))
@@ -170,8 +174,8 @@ if __name__=='__main__':
             for j, batch in enumerate(val_bar):
                 val_data_batch = batch['data']
                 val_labels_batch = batch['labels']
-                b, t, w, h = val_data_batch.shape
-                val_data_batch = torch.reshape(val_data_batch, (b, c, w, h))
+                b, c, w, h = val_data_batch.shape # b, t, w, h = val_data_batch.shape
+                # val_data_batch = torch.reshape(val_data_batch, (b, c, w, h))
                 val_labels_batch = torch.reshape(val_labels_batch, (b, num_classes, w, h))
                 val_data_batch = val_data_batch.to(device)
                 val_labels_batch = val_labels_batch.to(torch.long).to(device)
@@ -196,7 +200,7 @@ if __name__=='__main__':
             print(f"Epoch {epoch + 1}, Validation Loss: {val_loss:.4f}, Mean IoU: {mean_iou_val:.4f}, Mean Dice: {mean_dice_val:.4f}")
 
             if len(best_checkpoints) < top_n_checkpoints or val_loss < best_checkpoints[0][0] and epoch>=50:
-                save_path = f"saved_models/model_{model_name}_mode_{mode}_num_heads_{num_heads}_hidden_size_{hidden_size}_batchsize_{batch_size}_checkpoint_epoch_{epoch + 1}_nc_{n_channel}_ts_{ts_length}.pth"
+                save_path = os.path.join(CHECKPOINT_DIR, f"model_{model_name}_mode_{mode}_num_heads_{num_heads}_hidden_size_{hidden_size}_batchsize_{batch_size}_checkpoint_epoch_{epoch + 1}_nc_{n_channel}_ts_{ts_length}.pth")
 
                 if len(best_checkpoints) == top_n_checkpoints:
                     _, remove_checkpoint = heapq.heappop(best_checkpoints)
@@ -249,7 +253,7 @@ if __name__=='__main__':
             test_dataloader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
             # Load the model checkpoint
             load_epoch = args.epoch
-            load_path = f"saved_models/model_{model_name}_mode_{mode}_num_heads_{num_heads}_hidden_size_{hidden_size}_batchsize_{batch_size}_checkpoint_epoch_{load_epoch}_nc_{n_channel}_ts_{ts_length}.pth"
+            load_path = os.path.join(CHECKPOINT_DIR, f"model_{model_name}_mode_{mode}_num_heads_{num_heads}_hidden_size_{hidden_size}_batchsize_{batch_size}_checkpoint_epoch_{load_epoch}_nc_{n_channel}_ts_{ts_length}.pth")
 
             checkpoint = torch.load(load_path)
             model.load_state_dict(checkpoint['model_state_dict'])
@@ -318,5 +322,3 @@ if __name__=='__main__':
             print('ID{} IoU Score of the whole TS:{}'.format(id, iou/length))
             print('ID{} F1 Score of the whole TS:{}'.format(id, f1/length))
         print('model F1 Score: {} and iou score: {}'.format(f1_all/len(ids), iou_all/len(ids)))
-
-

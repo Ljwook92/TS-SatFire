@@ -421,8 +421,8 @@ class AFTestDatasetProcessor(SatProcessingUtils):
         
         output_array_stacked = np.stack(array_stack, axis=0)
         print(output_array_stacked.shape)
-        np.save(save_path + file_name, output_array_stacked[:,:,:-1,:,:].astype(np.float))
-        np.save(save_path + file_name.replace('img', 'label'), output_array_stacked[:,:,-1,:,:].astype(np.float))
+        np.save(os.path.join(save_path, file_name), output_array_stacked[:,:,:-1,:,:].astype(np.float32))
+        np.save(os.path.join(save_path, file_name.replace('img','label')), output_array_stacked[:,:,-1,:,:].astype(np.float32))
 
     def af_seq_tokenizing_and_test_slicing(self, location, modes, ts_length, interval, usecase, root_path, save_path):
         window_size = 1
@@ -434,10 +434,8 @@ class AFTestDatasetProcessor(SatProcessingUtils):
             tokenized_label = np.load(os.path.join(root_path, f'af_{location}_label_seqtoseq_alll_{ts_length}i_{interval}.npy')).transpose((0, 3, 4, 2, 1))
             tokenized_label = tokenized_label[..., 2]
         else:
-            root_path = '/home/z/h/zhao2/CalFireMonitoring/data_train_proj2'
-            save_path = '/home/z/h/zhao2/TS-SatFire/dataset/dataset_test'
-            tokenized_array = np.load(os.path.join(root_path, f'af_{location}_img.npy')).transpose((0, 3, 4, 1, 2))
-            tokenized_label = np.load(os.path.join(root_path, f'af_{location}_label.npy')).transpose((0, 2, 3, 1))
+            tokenized_array = np.load(os.path.join(save_path, 'dataset_test', f'af_{location}_img.npy')).transpose((0, 3, 4, 1, 2))
+            tokenized_label = np.load(os.path.join(save_path, 'dataset_test', f'af_{location}_label.npy')).transpose((0, 2, 3, 1))
         if tokenized_array.shape[-2]>=ts_length:
             array_concat = []
             label_concat = []
