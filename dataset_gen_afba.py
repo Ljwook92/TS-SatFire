@@ -50,8 +50,7 @@ if __name__ == '__main__':
         locations = val_ids
     else:
         if usecase == 'ba':
-            # locations = test_ids
-            locations = ['HWF036', 'HWF030', 'GWF027WWF023', 'SWF060', 'SWF068']
+            locations = test_ids
         else:
             locations = ['elephant_hill_fire', 'eagle_bluff_fire', 'double_creek_fire','sparks_lake_fire', 'lytton_fire', 
                         'chuckegg_creek_fire', 'swedish_fire', 'sydney_fire', 'thomas_fire', 'tubbs_fire', 
