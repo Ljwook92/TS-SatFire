@@ -1,6 +1,8 @@
 import argparse
 import json
 import os
+import re
+from glob import glob
 from typing import Dict, List, Tuple
 
 import numpy as np
@@ -77,6 +79,40 @@ def load_checkpoint(model: nn.Module, checkpoint_path: str, device: torch.device
     checkpoint = torch.load(checkpoint_path, map_location=device)
     state_dict = checkpoint.get("model_state_dict", checkpoint)
     model.load_state_dict(state_dict, strict=True)
+
+
+def _extract_epoch(path: str) -> int:
+    m = re.search(r"checkpoint_epoch_(\\d+)", os.path.basename(path))
+    if not m:
+        return -1
+    return int(m.group(1))
+
+
+def resolve_checkpoint_path(args: argparse.Namespace) -> str:
+    if args.ckpt:
+        return args.ckpt
+
+    ckpt_dir = args.ckpt_dir
+    pattern = (
+        f"model_swinunetr3d_run_{args.run}_seed_{args.seed}_mode_{args.mode}_"
+        f"num_heads_{args.nh}_hidden_size_{args.ed}_batchsize_*_"
+        f"checkpoint_epoch_*_nc_{args.nc}_ts_{args.ts}_attention_{args.av}.pth"
+    )
+    candidates = sorted(glob(os.path.join(ckpt_dir, pattern)))
+    if not candidates:
+        raise FileNotFoundError(
+            f"No checkpoint matched pattern under {ckpt_dir}: {pattern}"
+        )
+
+    if args.epoch is not None:
+        exact = [p for p in candidates if _extract_epoch(p) == args.epoch]
+        if not exact:
+            raise FileNotFoundError(
+                f"No checkpoint matched requested epoch={args.epoch} under {ckpt_dir}"
+            )
+        return exact[-1]
+
+    return max(candidates, key=_extract_epoch)
 
 
 def get_fire_prob_and_label(batch: Dict[str, torch.Tensor], logits: torch.Tensor, mode: str) -> Tuple[np.ndarray, np.ndarray]:
@@ -250,7 +286,11 @@ def build_datasets(mode: str, ts_length: int, interval: int, n_channel: int) -> 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Conformal prediction analysis for TS-SatFire (SwinUNETR-3D)")
     parser.add_argument("-mode", type=str, choices=["af", "ba", "pred"], required=True)
-    parser.add_argument("-ckpt", type=str, required=True, help="Path to trained SwinUNETR-3D checkpoint")
+    parser.add_argument("-ckpt", type=str, default=None, help="Path to trained SwinUNETR-3D checkpoint")
+    parser.add_argument("--ckpt-dir", type=str, default=os.path.join(ROOT_DIR, "checkpoints"))
+    parser.add_argument("-epoch", type=int, default=None, help="Epoch to load when -ckpt is omitted")
+    parser.add_argument("-run", type=int, default=1, help="Training run id used in checkpoint filename")
+    parser.add_argument("-seed", type=int, default=42, help="Training seed used in checkpoint filename")
     parser.add_argument("-b", type=int, default=2, help="Batch size")
     parser.add_argument("-nh", type=int, required=True, help="SwinUNETR num_heads")
     parser.add_argument("-ed", type=int, required=True, help="SwinUNETR feature size")
@@ -278,7 +318,8 @@ def main() -> None:
         attn_version=args.av,
     ).to(device)
 
-    load_checkpoint(model, args.ckpt, device)
+    ckpt_path = resolve_checkpoint_path(args)
+    load_checkpoint(model, ckpt_path, device)
 
     cal_ds, test_ds = build_datasets(
         mode=args.mode,
@@ -304,7 +345,7 @@ def main() -> None:
 
     result = {
         "mode": args.mode,
-        "checkpoint": args.ckpt,
+        "checkpoint": ckpt_path,
         "alpha": args.alpha,
         "threshold": args.threshold,
         "calibration_pixels": int(cal_y.size),
