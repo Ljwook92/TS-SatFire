@@ -11,7 +11,7 @@ import torch
 from torch import nn
 from torch.utils.data import ConcatDataset, DataLoader
 
-from calibration import conformal_quantile, evaluate_cp, nonconformity_score
+from calibration import class_conditional_quantiles, evaluate_cp
 from satimg_dataset_processor.data_generator_pred_torch import FireDataset as PredFireDataset
 from satimg_dataset_processor.data_generator_torch import FireDataset as AfBaFireDataset
 from satimg_dataset_processor.data_generator_torch import Normalize
@@ -174,8 +174,8 @@ def build_afba_calibration_dataset(mode: str, ts_length: int, interval: int, n_c
     )
 
 
-def build_af_test_dataset(ts_length: int, interval: int, n_channel: int) -> torch.utils.data.Dataset:
-    datasets: List[torch.utils.data.Dataset] = []
+def build_af_test_cases(ts_length: int, interval: int, n_channel: int) -> List[Tuple[str, torch.utils.data.Dataset]]:
+    cases: List[Tuple[str, torch.utils.data.Dataset]] = []
     transform = Normalize(
         mean=[18.76488, 27.441864, 20.584806, 305.99478, 294.31738, 14.625097, 276.4207, 275.16766],
         std=[15.911591, 14.879259, 10.832616, 21.761852, 24.703484, 9.878246, 40.64329, 40.7657],
@@ -193,14 +193,12 @@ def build_af_test_dataset(ts_length: int, interval: int, n_channel: int) -> torc
                 n_channel=n_channel,
                 label_sel=2,
             )
-            datasets.append(ds)
+            cases.append((fire_id, ds))
 
-    if not datasets:
-        return EmptyDataset()
-    return ConcatDataset(datasets)
+    return cases
 
 
-def build_ba_test_dataset(ts_length: int, interval: int, n_channel: int) -> torch.utils.data.Dataset:
+def build_ba_test_cases(ts_length: int, interval: int, n_channel: int) -> List[Tuple[str, torch.utils.data.Dataset]]:
     df = pd.read_csv(os.path.join(BASE_DIR, "roi", "us_fire_2021_out_new.csv"))
     ids = df["Id"].astype(str).tolist()
     label_sels = df["label_sel"].astype(int).tolist()
@@ -210,7 +208,7 @@ def build_ba_test_dataset(ts_length: int, interval: int, n_channel: int) -> torc
         std=[15.359564, 14.336508, 10.64194, 12.505946, 11.571564, 9.666024, 11.495529, 7.9788895],
     )
 
-    datasets: List[torch.utils.data.Dataset] = []
+    cases: List[Tuple[str, torch.utils.data.Dataset]] = []
     for fire_id, label_sel in zip(ids, label_sels):
         image_path = os.path.join(
             DATASET_DIR,
@@ -231,11 +229,9 @@ def build_ba_test_dataset(ts_length: int, interval: int, n_channel: int) -> torc
                 n_channel=n_channel,
                 label_sel=label_sel,
             )
-            datasets.append(ds)
+            cases.append((fire_id, ds))
 
-    if not datasets:
-        return EmptyDataset()
-    return ConcatDataset(datasets)
+    return cases
 
 
 def build_pred_calibration_dataset(ts_length: int, interval: int, n_channel: int) -> torch.utils.data.Dataset:
@@ -252,11 +248,11 @@ def build_pred_calibration_dataset(ts_length: int, interval: int, n_channel: int
     )
 
 
-def build_pred_test_dataset(ts_length: int, interval: int, n_channel: int) -> torch.utils.data.Dataset:
+def build_pred_test_cases(ts_length: int, interval: int, n_channel: int) -> List[Tuple[str, torch.utils.data.Dataset]]:
     df = pd.read_csv(os.path.join(BASE_DIR, "roi", "us_fire_2021_out_new.csv"))
     ids = [x for x in df["Id"].astype(str).tolist() if x != "US_2021_NV3700011641620210517"]
 
-    datasets: List[torch.utils.data.Dataset] = []
+    cases: List[Tuple[str, torch.utils.data.Dataset]] = []
     for fire_id in ids:
         image_path = os.path.join(DATASET_DIR, "dataset_test", f"pred_{fire_id}_img_seqtoseql_{ts_length}i_{interval}.npy")
         label_path = os.path.join(DATASET_DIR, "dataset_test", f"pred_{fire_id}_label_seqtoseql_{ts_length}i_{interval}.npy")
@@ -270,26 +266,26 @@ def build_pred_test_dataset(ts_length: int, interval: int, n_channel: int) -> to
                 target_is_single_day=True,
                 use_augmentations=False,
             )
-            datasets.append(ds)
+            cases.append((fire_id, ds))
 
-    if not datasets:
-        return EmptyDataset()
-    return ConcatDataset(datasets)
+    return cases
 
 
-def build_datasets(mode: str, ts_length: int, interval: int, n_channel: int) -> Tuple[torch.utils.data.Dataset, torch.utils.data.Dataset]:
+def build_datasets(
+    mode: str, ts_length: int, interval: int, n_channel: int
+) -> Tuple[torch.utils.data.Dataset, List[Tuple[str, torch.utils.data.Dataset]]]:
     if mode == "af":
         cal_ds = build_afba_calibration_dataset(mode="af", ts_length=ts_length, interval=interval, n_channel=n_channel)
-        test_ds = build_af_test_dataset(ts_length=ts_length, interval=interval, n_channel=n_channel)
+        test_cases = build_af_test_cases(ts_length=ts_length, interval=interval, n_channel=n_channel)
     elif mode == "ba":
         cal_ds = build_afba_calibration_dataset(mode="ba", ts_length=ts_length, interval=interval, n_channel=n_channel)
-        test_ds = build_ba_test_dataset(ts_length=ts_length, interval=interval, n_channel=n_channel)
+        test_cases = build_ba_test_cases(ts_length=ts_length, interval=interval, n_channel=n_channel)
     elif mode == "pred":
         cal_ds = build_pred_calibration_dataset(ts_length=ts_length, interval=interval, n_channel=n_channel)
-        test_ds = build_pred_test_dataset(ts_length=ts_length, interval=interval, n_channel=n_channel)
+        test_cases = build_pred_test_cases(ts_length=ts_length, interval=interval, n_channel=n_channel)
     else:
         raise ValueError(f"Unsupported mode: {mode}")
-    return cal_ds, test_ds
+    return cal_ds, test_cases
 
 
 def main() -> None:
@@ -330,7 +326,7 @@ def main() -> None:
     ckpt_path = resolve_checkpoint_path(args)
     load_checkpoint(model, ckpt_path, device)
 
-    cal_ds, test_ds = build_datasets(
+    cal_ds, test_cases = build_datasets(
         mode=args.mode,
         ts_length=args.ts,
         interval=args.it,
@@ -339,18 +335,42 @@ def main() -> None:
 
     if len(cal_ds) == 0:
         raise RuntimeError("Calibration dataset is empty.")
-    if len(test_ds) == 0:
+    if len(test_cases) == 0:
         raise RuntimeError("Test dataset is empty. Check dataset generation and file naming.")
 
     cal_loader = DataLoader(cal_ds, batch_size=args.b, shuffle=False)
-    test_loader = DataLoader(test_ds, batch_size=args.b, shuffle=False)
-
     cal_prob, cal_y = collect_prob_and_label(model, cal_loader, device, args.mode)
-    cal_scores = nonconformity_score(cal_prob, cal_y)
-    qhat = conformal_quantile(cal_scores, alpha=args.alpha)
+    qhat = class_conditional_quantiles(cal_prob, cal_y, alpha=args.alpha)
 
-    test_prob, test_y = collect_prob_and_label(model, test_loader, device, args.mode)
-    metrics = evaluate_cp(test_prob, test_y, qhat=qhat, threshold=args.threshold)
+    case_metrics: List[Dict[str, float]] = []
+    test_probs: List[np.ndarray] = []
+    test_labels: List[np.ndarray] = []
+    for case_id, case_ds in test_cases:
+        case_loader = DataLoader(case_ds, batch_size=args.b, shuffle=False)
+        case_prob, case_y = collect_prob_and_label(model, case_loader, device, args.mode)
+        test_probs.append(case_prob)
+        test_labels.append(case_y)
+        m = evaluate_cp(case_prob, case_y, qhat=qhat, threshold=args.threshold)
+        m["case_id"] = case_id
+        case_metrics.append(m)
+
+    test_prob = np.concatenate(test_probs) if test_probs else np.array([], dtype=np.float64)
+    test_y = np.concatenate(test_labels) if test_labels else np.array([], dtype=np.int64)
+    global_metrics = evaluate_cp(test_prob, test_y, qhat=qhat, threshold=args.threshold)
+
+    macro_keys = [
+        "coverage",
+        "uncertainty_rate",
+        "error_capture_rate",
+        "baseline_f1",
+        "baseline_iou",
+        "selective_f1",
+        "selective_iou",
+    ]
+    macro_metrics: Dict[str, float] = {}
+    for key in macro_keys:
+        vals = np.array([cm[key] for cm in case_metrics], dtype=np.float64)
+        macro_metrics[key] = float(np.nanmean(vals))
 
     result = {
         "mode": args.mode,
@@ -359,7 +379,10 @@ def main() -> None:
         "threshold": args.threshold,
         "calibration_pixels": int(cal_y.size),
         "test_pixels": int(test_y.size),
-        "metrics": metrics,
+        "metrics_global_pixel": global_metrics,
+        "metrics_macro_case_mean": macro_metrics,
+        "num_test_cases": len(case_metrics),
+        "case_metrics": case_metrics,
     }
 
     out_json = args.out_json or os.path.join(BASE_DIR, f"cp_metrics_{args.mode}.json")
