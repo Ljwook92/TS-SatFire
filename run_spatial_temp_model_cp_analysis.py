@@ -203,6 +203,7 @@ def build_af_test_dataset(ts_length: int, interval: int, n_channel: int) -> torc
 def build_ba_test_dataset(ts_length: int, interval: int, n_channel: int) -> torch.utils.data.Dataset:
     df = pd.read_csv(os.path.join(BASE_DIR, "roi", "us_fire_2021_out_new.csv"))
     ids = df["Id"].astype(str).tolist()
+    label_sels = df["label_sel"].astype(int).tolist()
 
     transform = Normalize(
         mean=[17.952442, 26.94709, 19.82838, 317.80234, 308.47693, 13.87255, 291.0257, 288.9398],
@@ -210,7 +211,7 @@ def build_ba_test_dataset(ts_length: int, interval: int, n_channel: int) -> torc
     )
 
     datasets: List[torch.utils.data.Dataset] = []
-    for fire_id in ids:
+    for fire_id, label_sel in zip(ids, label_sels):
         image_path = os.path.join(
             DATASET_DIR,
             "dataset_test",
@@ -228,7 +229,7 @@ def build_ba_test_dataset(ts_length: int, interval: int, n_channel: int) -> torc
                 ts_length=ts_length,
                 transform=transform,
                 n_channel=n_channel,
-                label_sel=0,
+                label_sel=label_sel,
             )
             datasets.append(ds)
 
