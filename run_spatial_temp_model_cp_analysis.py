@@ -117,7 +117,7 @@ def resolve_checkpoint_path(args: argparse.Namespace) -> str:
 
 def get_fire_prob_and_label(batch: Dict[str, torch.Tensor], logits: torch.Tensor, mode: str) -> Tuple[np.ndarray, np.ndarray]:
     probs_fire = torch.sigmoid(logits[:, 1, ...])
-    raw_labels = batch["labels"][:, 1, ...]
+    raw_labels = batch["labels"][:, 1, ...].to(probs_fire.device)
 
     # Match baseline evaluation behavior:
     # pixels with label == -1 are treated as background and prediction is forced to 0.
