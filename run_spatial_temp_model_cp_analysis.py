@@ -82,7 +82,7 @@ def load_checkpoint(model: nn.Module, checkpoint_path: str, device: torch.device
 
 
 def _extract_epoch(path: str) -> int:
-    m = re.search(r"checkpoint_epoch_(\\d+)", os.path.basename(path))
+    m = re.search(r"checkpoint_epoch_(\d+)", os.path.basename(path))
     if not m:
         return -1
     return int(m.group(1))
