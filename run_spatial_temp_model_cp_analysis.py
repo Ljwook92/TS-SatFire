@@ -211,8 +211,16 @@ def build_ba_test_dataset(ts_length: int, interval: int, n_channel: int) -> torc
 
     datasets: List[torch.utils.data.Dataset] = []
     for fire_id in ids:
-        image_path = os.path.join(DATASET_DIR, f"ba_{fire_id}_img_seqtoseql_{ts_length}i_{interval}.npy")
-        label_path = os.path.join(DATASET_DIR, f"ba_{fire_id}_label_seqtoseql_{ts_length}i_{interval}.npy")
+        image_path = os.path.join(
+            DATASET_DIR,
+            "dataset_test",
+            f"ba_{fire_id}_img_seqtoseql_{ts_length}i_{interval}.npy",
+        )
+        label_path = os.path.join(
+            DATASET_DIR,
+            "dataset_test",
+            f"ba_{fire_id}_label_seqtoseql_{ts_length}i_{interval}.npy",
+        )
         if os.path.exists(image_path) and os.path.exists(label_path):
             ds = AfBaFireDataset(
                 image_path=image_path,
