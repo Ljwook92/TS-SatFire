@@ -120,9 +120,9 @@ def get_fire_prob_and_label(batch: Dict[str, torch.Tensor], logits: torch.Tensor
 
     labels = batch["labels"]
     if mode == "pred":
-        y = labels[:, 1, ...]
+        y = (labels[:, 1, ...] > 0).long()
     else:
-        y = labels[:, 1, ...]
+        y = (labels[:, 1, ...] > 0).long()
 
     return probs_fire.detach().cpu().numpy(), y.detach().cpu().numpy().astype(np.int64)
 

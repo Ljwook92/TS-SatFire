@@ -8,7 +8,7 @@ from sklearn.metrics import f1_score, jaccard_score
 def nonconformity_score(prob_fire: np.ndarray, y_true: np.ndarray) -> np.ndarray:
     """Binary nonconformity score: 1-p for positives, p for negatives."""
     prob = np.asarray(prob_fire, dtype=np.float64)
-    y = np.asarray(y_true, dtype=np.int64)
+    y = (np.asarray(y_true) > 0).astype(np.int64)
     return np.where(y == 1, 1.0 - prob, prob)
 
 
@@ -40,7 +40,7 @@ def prediction_set(prob_fire: np.ndarray, qhat: float) -> Tuple[np.ndarray, np.n
 def evaluate_cp(prob_fire: np.ndarray, y_true: np.ndarray, qhat: float, threshold: float = 0.5) -> Dict[str, float]:
     """Compute baseline + conformal reliability metrics."""
     prob = np.asarray(prob_fire, dtype=np.float64).ravel()
-    y = np.asarray(y_true, dtype=np.int64).ravel()
+    y = (np.asarray(y_true).ravel() > 0).astype(np.int64)
 
     baseline_pred = (prob >= threshold).astype(np.int64)
 
