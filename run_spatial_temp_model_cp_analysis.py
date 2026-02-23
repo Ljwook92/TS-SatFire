@@ -115,17 +115,20 @@ def resolve_checkpoint_path(args: argparse.Namespace) -> str:
     return max(candidates, key=_extract_epoch)
 
 
-def get_fire_prob_and_label(batch: Dict[str, torch.Tensor], logits: torch.Tensor, mode: str) -> Tuple[np.ndarray, np.ndarray]:
+def get_fire_prob_and_label(
+    batch: Dict[str, torch.Tensor], logits: torch.Tensor, mode: str
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     probs_fire = torch.sigmoid(logits[:, 1, ...])
     raw_labels = batch["labels"][:, 1, ...].to(probs_fire.device)
 
-    # Match baseline evaluation behavior:
-    # pixels with label == -1 are treated as background and prediction is forced to 0.
-    ignore_mask = raw_labels == -1
-    probs_fire = torch.where(ignore_mask, torch.zeros_like(probs_fire), probs_fire)
-    y = torch.where(ignore_mask, torch.zeros_like(raw_labels), (raw_labels > 0).long())
+    valid_mask = raw_labels != -1
+    y = (raw_labels > 0).long()
 
-    return probs_fire.detach().cpu().numpy(), y.detach().cpu().numpy().astype(np.int64)
+    return (
+        probs_fire.detach().cpu().numpy(),
+        y.detach().cpu().numpy().astype(np.int64),
+        valid_mask.detach().cpu().numpy().astype(bool),
+    )
 
 
 def collect_prob_and_label(model: nn.Module, dataloader: DataLoader, device: torch.device, mode: str) -> Tuple[np.ndarray, np.ndarray]:
@@ -139,9 +142,12 @@ def collect_prob_and_label(model: nn.Module, dataloader: DataLoader, device: tor
             logits = model(x)
             if mode == "pred":
                 logits = logits.mean(2)
-            prob_fire, y_true = get_fire_prob_and_label(batch, logits, mode)
-            all_prob.append(prob_fire.reshape(-1))
-            all_y.append(y_true.reshape(-1))
+            prob_fire, y_true, valid = get_fire_prob_and_label(batch, logits, mode)
+            prob_flat = prob_fire.reshape(-1)
+            y_flat = y_true.reshape(-1)
+            valid_flat = valid.reshape(-1)
+            all_prob.append(prob_flat[valid_flat])
+            all_y.append(y_flat[valid_flat])
 
     if not all_prob:
         return np.array([], dtype=np.float64), np.array([], dtype=np.int64)
