@@ -117,12 +117,13 @@ def resolve_checkpoint_path(args: argparse.Namespace) -> str:
 
 def get_fire_prob_and_label(batch: Dict[str, torch.Tensor], logits: torch.Tensor, mode: str) -> Tuple[np.ndarray, np.ndarray]:
     probs_fire = torch.sigmoid(logits[:, 1, ...])
+    raw_labels = batch["labels"][:, 1, ...]
 
-    labels = batch["labels"]
-    if mode == "pred":
-        y = (labels[:, 1, ...] > 0).long()
-    else:
-        y = (labels[:, 1, ...] > 0).long()
+    # Match baseline evaluation behavior:
+    # pixels with label == -1 are treated as background and prediction is forced to 0.
+    ignore_mask = raw_labels == -1
+    probs_fire = torch.where(ignore_mask, torch.zeros_like(probs_fire), probs_fire)
+    y = torch.where(ignore_mask, torch.zeros_like(raw_labels), (raw_labels > 0).long())
 
     return probs_fire.detach().cpu().numpy(), y.detach().cpu().numpy().astype(np.int64)
 
