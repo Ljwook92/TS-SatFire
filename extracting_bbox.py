@@ -84,6 +84,16 @@ def parse_args():
         help="Identifier column name.",
     )
     parser.add_argument(
+        "--start-date-col",
+        default="start_date",
+        help="Start date column name.",
+    )
+    parser.add_argument(
+        "--end-date-col",
+        default="end_date",
+        help="End date column name.",
+    )
+    parser.add_argument(
         "--half-size-km",
         type=float,
         default=128.0,
@@ -129,19 +139,29 @@ def main():
         "max_lon": float("-inf"),
         "max_lat": float("-inf"),
     }
+    start_dates = []
+    end_dates = []
 
     for row in rows:
         lat = float(row[args.lat_col])
         lon = float(row[args.lon_col])
         bbox = build_bbox(lat, lon, half_height_km, half_width_km)
+        start_date = row.get(args.start_date_col, "")
+        end_date = row.get(args.end_date_col, "")
 
         aggregate["min_lon"] = min(aggregate["min_lon"], bbox["min_lon"])
         aggregate["min_lat"] = min(aggregate["min_lat"], bbox["min_lat"])
         aggregate["max_lon"] = max(aggregate["max_lon"], bbox["max_lon"])
         aggregate["max_lat"] = max(aggregate["max_lat"], bbox["max_lat"])
+        if start_date:
+            start_dates.append(start_date)
+        if end_date:
+            end_dates.append(end_date)
 
-        output_row = dict(row)
-        output_row.update({
+        output_row = {
+            args.id_col: row.get(args.id_col, ""),
+            args.start_date_col: start_date,
+            args.end_date_col: end_date,
             "center_lat": lat,
             "center_lon": lon,
             "half_width_km": half_width_km,
@@ -150,7 +170,10 @@ def main():
             "min_lat": bbox["min_lat"],
             "max_lon": bbox["max_lon"],
             "max_lat": bbox["max_lat"],
-        })
+        }
+        for key, value in row.items():
+            if key not in output_row:
+                output_row[key] = value
         output_rows.append(output_row)
         features.append(make_feature(row, output_row))
 
@@ -184,6 +207,8 @@ def main():
                 fieldnames=[
                     "source_file",
                     "row_count",
+                    "start_date_min",
+                    "end_date_max",
                     "half_width_km",
                     "half_height_km",
                     "min_lon",
@@ -196,6 +221,8 @@ def main():
             writer.writerow({
                 "source_file": args.input,
                 "row_count": len(output_rows),
+                "start_date_min": min(start_dates) if start_dates else "",
+                "end_date_max": max(end_dates) if end_dates else "",
                 "half_width_km": half_width_km,
                 "half_height_km": half_height_km,
                 "min_lon": aggregate["min_lon"],
