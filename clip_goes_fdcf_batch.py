@@ -92,6 +92,16 @@ def clip_dataset(ds, xy_bounds):
     return ds.sel(x=x_slice, y=y_slice)
 
 
+def clear_netcdf_encoding(ds):
+    ds = ds.copy()
+    ds.encoding = {}
+    for name in ds.coords:
+        ds[name].encoding = {}
+    for name in ds.data_vars:
+        ds[name].encoding = {}
+    return ds
+
+
 def list_event_files(goes_root, start_date, end_date):
     files = []
     for current_date in daterange(start_date, end_date):
@@ -112,6 +122,8 @@ def clip_one_file(nc_path, row, output_root, overwrite):
     if clipped.sizes.get("x", 0) == 0 or clipped.sizes.get("y", 0) == 0:
         ds.close()
         return "empty"
+
+    clipped = clear_netcdf_encoding(clipped)
 
     out_dir = output_root / fire_id
     out_dir.mkdir(parents=True, exist_ok=True)
