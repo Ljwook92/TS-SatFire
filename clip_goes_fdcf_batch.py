@@ -3,8 +3,11 @@ import csv
 import datetime as dt
 from pathlib import Path
 
+import numpy as np
+import rasterio
 import xarray as xr
 from pyproj import CRS, Transformer
+from rasterio.transform import Affine
 
 
 def parse_args():
@@ -102,6 +105,85 @@ def clear_netcdf_encoding(ds):
     return ds
 
 
+def build_affine_transform(clipped):
+    x = clipped.x.values
+    y = clipped.y.values
+    if x.size < 2 or y.size < 2:
+        raise ValueError("Need at least 2 x/y coordinates to build a GeoTIFF transform.")
+
+    x_res = float(x[1] - x[0])
+    y_res = float(y[1] - y[0])
+    x_origin = float(x[0] - (x_res / 2.0))
+    y_origin = float(y[0] - (y_res / 2.0))
+    return Affine(x_res, 0.0, x_origin, 0.0, y_res, y_origin)
+
+
+def extract_timestamp(nc_path, clipped):
+    time_str = clipped.attrs.get("time_coverage_start", "")
+    if time_str:
+        return (
+            time_str.replace("-", "")
+            .replace(":", "")
+            .replace(".0Z", "Z")
+            .replace(".9Z", "Z")
+            .replace(".5Z", "Z")
+            .replace(".6Z", "Z")
+            .replace(".7Z", "Z")
+            .replace(".8Z", "Z")
+            .replace("Z", "")
+        )
+    stem = nc_path.stem
+    if "_s" in stem:
+        return stem.split("_s", 1)[1].split("_", 1)[0]
+    return stem
+
+
+def write_geotiff(output_path, array, crs_wkt, transform, nodata):
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with rasterio.open(
+        output_path,
+        "w",
+        driver="GTiff",
+        height=array.shape[0],
+        width=array.shape[1],
+        count=1,
+        dtype=array.dtype,
+        crs=crs_wkt,
+        transform=transform,
+        nodata=nodata,
+        compress="LZW",
+    ) as dst:
+        dst.write(array, 1)
+
+
+def save_mask_and_frp(nc_path, clipped, output_root, fire_id, overwrite):
+    crs_wkt = build_goes_crs(clipped).to_wkt()
+    transform = build_affine_transform(clipped)
+    timestamp = extract_timestamp(nc_path, clipped)
+
+    mask_dir = output_root / fire_id / "mask"
+    frp_dir = output_root / fire_id / "frp"
+    mask_path = mask_dir / f"{timestamp}_mask.tif"
+    frp_path = frp_dir / f"{timestamp}_frp.tif"
+
+    if mask_path.exists() and frp_path.exists() and not overwrite:
+        return "exists"
+
+    mask_fill = clipped["Mask"].attrs.get("_FillValue", -99)
+    mask_array = clipped["Mask"].values
+    if np.issubdtype(mask_array.dtype, np.floating):
+        mask_array = np.where(np.isnan(mask_array), mask_fill, mask_array)
+    mask_array = mask_array.astype(np.int16, copy=False)
+
+    power_fill = clipped["Power"].attrs.get("_FillValue", -9999.0)
+    power_array = clipped["Power"].values
+    power_array = np.where(np.isnan(power_array), power_fill, power_array).astype(np.float32, copy=False)
+
+    write_geotiff(mask_path, mask_array, crs_wkt, transform, mask_fill)
+    write_geotiff(frp_path, power_array, crs_wkt, transform, float(power_fill))
+    return "saved"
+
+
 def list_event_files(goes_root, start_date, end_date):
     files = []
     for current_date in daterange(start_date, end_date):
@@ -124,18 +206,9 @@ def clip_one_file(nc_path, row, output_root, overwrite):
         return "empty"
 
     clipped = clear_netcdf_encoding(clipped)
-
-    out_dir = output_root / fire_id
-    out_dir.mkdir(parents=True, exist_ok=True)
-    out_path = out_dir / nc_path.name
-
-    if out_path.exists() and not overwrite:
-        ds.close()
-        return "exists"
-
-    clipped.to_netcdf(out_path)
+    result = save_mask_and_frp(nc_path, clipped, output_root, fire_id, overwrite)
     ds.close()
-    return "saved"
+    return result
 
 
 def main():
