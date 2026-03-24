@@ -1,0 +1,5 @@
+__pycache__/
+*.pyc
+.DS_Store
+memory/runs/*.json
+memory/latest_state.json

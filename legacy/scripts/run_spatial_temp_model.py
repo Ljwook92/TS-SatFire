@@ -65,13 +65,14 @@ import wandb
 from satimg_dataset_processor.data_generator_torch import Normalize,FireDataset
 from sklearn.metrics import f1_score, jaccard_score
 import pandas as pd
+from support.path_config import get_dataset_root, get_satfire_root, get_checkpoints_root, get_eval_root
 
-root_path = "/home/jlc3q/data/SatFire/dataset"
-ROOT_DIR = os.path.expanduser("~/data/SatFire/")
-CHECKPOINT_DIR = os.path.join(ROOT_DIR, "checkpoints")
+root_path = str(get_dataset_root())
+ROOT_DIR = str(get_satfire_root())
+CHECKPOINT_DIR = str(get_checkpoints_root())
 os.makedirs(CHECKPOINT_DIR, exist_ok=True)
 
-EVAL_DIR = os.path.join(ROOT_DIR, "evaluation_plot")
+EVAL_DIR = str(get_eval_root())
 os.makedirs(EVAL_DIR, exist_ok=True)
 
 def wandb_config(model_name, num_heads, hidden_size, batch_size):
@@ -360,4 +361,3 @@ else:
         # print('ID{} F1 Score of the whole TS:{}'.format(id, f1/length))
         print('{},{},{}'.format(id, f1/length, iou/length))
     print('model F1 Score: {} and iou score: {}'.format(f1_all/len(ids), iou_all/len(ids)))
-

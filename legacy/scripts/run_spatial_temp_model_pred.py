@@ -25,6 +25,7 @@ from sklearn.metrics import f1_score, jaccard_score
 import pandas as pd
 import matplotlib.pyplot as plt
 import pathlib
+from support.path_config import get_satfire_root, get_dataset_root
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -90,8 +91,8 @@ if __name__=='__main__':
     wandb_user_name = "zhaoyutim"
     # root_path = f"{root_dir}/dataset/"
    
-    root_dir = os.path.expanduser("~/data/SatFire")
-    root_path = os.path.join(root_dir, "dataset")
+    root_dir = str(get_satfire_root())
+    root_path = str(get_dataset_root())
    
     
     # Dataloader
