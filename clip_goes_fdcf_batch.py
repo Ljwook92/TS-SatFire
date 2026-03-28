@@ -111,10 +111,17 @@ def build_affine_transform(clipped):
     if x.size < 2 or y.size < 2:
         raise ValueError("Need at least 2 x/y coordinates to build a GeoTIFF transform.")
 
-    x_res = float(x[1] - x[0])
-    y_res = float(y[1] - y[0])
-    x_origin = float(x[0] - (x_res / 2.0))
-    y_origin = float(y[0] - (y_res / 2.0))
+    sat_height = clipped["goes_imager_projection"].perspective_point_height.item()
+
+    # GOES fixed-grid coordinates are stored in radians. GeoTIFF projected
+    # coordinates must be written in meters for the geostationary CRS.
+    x_m = x * sat_height
+    y_m = y * sat_height
+
+    x_res = float(x_m[1] - x_m[0])
+    y_res = float(y_m[1] - y_m[0])
+    x_origin = float(x_m[0] - (x_res / 2.0))
+    y_origin = float(y_m[0] - (y_res / 2.0))
     return Affine(x_res, 0.0, x_origin, 0.0, y_res, y_origin)
 
 
