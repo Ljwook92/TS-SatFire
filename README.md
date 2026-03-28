@@ -1,59 +1,81 @@
-# TS-SatFire Time-Series Multi-Task Satellite Imagery Dataset for Wildfire Detection and Prediction
+# TS_Agentic_AI
 
-🔥This paper has been accepted in Nature Scientific Data! Link:[[https://www.nature.com/articles/s41597-025-06271-3]]
+`TS_Agentic_AI` reorganizes the original `TS-SatFire` repository into an agent-oriented remote sensing workflow.
 
-## Repo Structure
-    .
-    ├── figures                                   # Analysis file for VIIRS Band I4 Data
-    ├── data_processor                            # Data processor from VIIRS Geotiff to time-series and tokenized time-series 
-    │   ├── satimg_dataset_processor.py           # Entry to generate time-series from VIIRS Geotiff
-    │   ├── data_generator_tf.py                  # dataloader for temporal models implemented in tensorflow
-    │   ├── data_generator_torch.py               # dataloader for spatial models and spatial-temporal models
-    ├── spatial_models                            # All the spatial models and spatial-temporal models (UNETR SwinUNETR) needed for the project 
-    ├── temporal_models                           # All the temporal models (RNN LSTM and T4Fire) needed for the project
-    ├── dataset_gen_afba.py                       # Main Entry to generate train/val/test dataset used for active fire detection (AF) and burned area mapping (BA)
-    ├── dataset_gen_pred.py                       # Main Entry to generate train/val/test dataset used for wildfire prediction
-    ├── run_seq_model.py                          # Main Entry to run spatial models
-    ├── run_spatial_model.py                      # Main Entry to run temporal models
-    ├── run_spatial_temp_model.py                 # Main Entry to run spatial-temporal models for AF and BA
-    ├── run_spatial_temp_model_pred.py            # Main Entry to run spatial-temporal models for prediction task
-    └── README.md
+The project now separates:
 
-## Abstract
+- `legacy/`: preserved wildfire analysis code copied from TS-SatFire
+- `agents/`: planner, executor, evaluator scaffolding
+- `tools/`: wrappers that execute legacy scripts as structured tools
+- `schemas/`: shared state and result schemas
+- `configs/`: default tool parameters and thresholds
+- `memory/`: persisted run history for iterative analysis
+- `knowledge/`: reference material for retrieval and planning
+- `References/`: source link notes used to build the knowledge base
 
-We introduce a comprehensive multi-temporal remote sensing dataset covering the entire life cycle of wildfires for active fire detection, daily wildfire monitoring and next-day wildfire prediction. This multi-task dataset comprises 179 wildfire events recorded majority in the US between January 2017 and October 2021. For each wildfire, images from the beginning until the end of the wildfire are provided. It includes a total of 3552 surface reflectance images along with auxiliary data such as weather, topography, and fuel information. Labels for current active fires (AF) and burned areas (BA) are provided for each image. Manual quality assurance is performed for all AF labels and BA test labels.The dataset sets three distinct tasks: a) active fire detection, b) daily burned area mapping and c) daily wildfire progression prediction. Detection tasks, such as active fire detection and burned area mapping, require pixel-wise classification utilizing multi-spectral, multi-temporal images. Prediction tasks involve learning the underlying physical processes by integrating satellite observations with auxiliary data. The primary objective of this dataset is to stimulate further research in wildfire monitoring, particularly leveraging advanced deep learning models capable of effectively processing multi-temporal, multi-spectral images to detect fires and accurately predict fire progression. The benchmarks for detection and prediction tasks indicate that utilizing both spatial and temporal information is crucial for this dataset.
+## What Was Kept
 
-## Spectral bands used in the dataset
-![Alt text](figures/flowchart.svg?raw=true "Dataset Setup")
-![Alt text](figures/Bands.png?raw=true "Dataset Channels")
+The following assets were preserved because they remain useful for the analysis layer:
 
+- wildfire dataset generation scripts
+- spatial, temporal, and spatial-temporal training scripts
+- legacy model implementations
+- dataset processing modules
+- ROI metadata and variable inventory
 
-## Preparing the dataset
-The dataset in GeoTIFF format can be downloaded from the Kaggle link below:
-[[https://www.kaggle.com/datasets/z789456sx/ts-satfire](https://www.kaggle.com/datasets/z789456sx/ts-satfire)]
+These assets now live under `legacy/`.
 
-Prepare the environment
+## What Was Set Aside
+
+The following code was not removed, but was moved out of the top-level workflow because it is not part of the first agentic MVP:
+
+- GOES clipping and coverage utilities
+- bbox extraction helpers
+- calibration helpers
+- one-off comparison scripts
+
+These now live under `legacy/support/`.
+
+## Agentic Layout
+
+The first MVP uses three roles:
+
+- `Planner`: selects the next analysis action
+- `Executor`: runs a legacy tool with structured inputs
+- `Evaluator`: inspects outputs, metrics, and errors to recommend retry, fallback, or completion
+
+## Quick Start
+
+Run a planning cycle:
+
+```bash
+python main.py --task af
 ```
-conda create --name <env> --file requirements.txt
+
+For the original HPC layout, the legacy code expects data under `/home/jlc3q/data/SatFire`.
+You can override this without editing scripts:
+
+```bash
+export SATFIRE_ROOT=/your/path/to/SatFire
+export TS_SATFIRE_CODE_ROOT=/your/path/to/TS-SatFire
 ```
 
-Prepare the Active fire detection dataset and Burned area mapping dataset:
-```
-python dataset_gen_afba.py -mode (train/val/test) -ts (length of the time-series) -it (interval between each sampling) -uc (ba/af Active fire detection or burned area mapping)
-```
-Prepare the Fire prediction prediction dataset:
-```
-python dataset_gen_pred.py -mode (train/val/test) -ts (length of the time-series) -it (interval between each sampling)
+Run a specific legacy tool through the executor:
+
+```bash
+python main.py --tool run_spatial_temp_model --task af --model swinunetr3d
 ```
 
-## Rerun the experiement
-```
-python run_spatial_temp_model.py -m <model name> -mode <af/ba> -b <batch size> -r <number of run> -lr <learning rate> -nh <hyperparameters of SwinUNETR> -ed <hyperparameters of SwinUNETR and UNETR> -nc <number of input channels> -ts <length of time-series> -it <interval> -test
-```
+The first version is intentionally conservative:
 
-## Author
+- deterministic tool registry
+- persisted JSON state
+- heuristic evaluator
+- planner that can be replaced later with an LLM + RAG policy
 
-#### Yu Zhao (zhaoyutim@gmail.com), Sebastian Gerard(sgerard@kth.se), Yifang Ban (yifang@kth.se), KTH Royal Institute of Technology, Stockholm, Sweden
+## Next Steps
 
-## Acknowledgement
-#### The research is part of the project ‘Sentinel4Wildfire’ funded by Formas, the Swedish research council for sustainable development and the project ‘EO-AI4Global Change’ funded by Digital Futures.
+- replace the heuristic planner with an LLM planner
+- add retrieval over `knowledge/`, experiment logs, and script documentation
+- expose legacy script outputs as normalized metrics and artifacts
+- add reflection and retry strategies based on evaluator feedback

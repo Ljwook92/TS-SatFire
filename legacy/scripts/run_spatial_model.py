@@ -22,13 +22,14 @@ import wandb
 from satimg_dataset_processor.data_generator_torch import Normalize, FireDataset
 from sklearn.metrics import f1_score, jaccard_score
 import pandas as pd
+from support.path_config import get_satfire_root, get_dataset_root, get_checkpoints_root
 
-ROOT_DIR = os.path.expanduser("~/data/SatFire/")
-CHECKPOINT_DIR = os.path.join(ROOT_DIR, "checkpoints")
+ROOT_DIR = str(get_satfire_root())
+CHECKPOINT_DIR = str(get_checkpoints_root())
 os.makedirs(CHECKPOINT_DIR, exist_ok=True)
 os.makedirs("evaluation_plot", exist_ok=True)
 
-root_path = '/home/jlc3q/data/SatFire/dataset/'
+root_path = str(get_dataset_root())
 
 def wandb_config(model_name, num_heads, hidden_size, batch_size):
     wandb.init(project="afba_"+model_name+"_grid_search")

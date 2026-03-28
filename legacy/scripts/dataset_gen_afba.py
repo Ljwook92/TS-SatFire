@@ -2,10 +2,10 @@ import argparse
 import pandas as pd
 import os
 from satimg_dataset_processor.satimg_dataset_processor import AFBADatasetProcessor, AFTestDatasetProcessor
+from support.path_config import get_raw_data_root, get_dataset_root
 
-ROOT_DIR = os.path.expanduser("~/data/SatFire/")
-RAW_DATA_DIR = os.path.join(ROOT_DIR, "ts-satfire")
-DATASET_DIR = os.path.join(ROOT_DIR, "dataset")
+RAW_DATA_DIR = str(get_raw_data_root())
+DATASET_DIR = str(get_dataset_root())
 # Training set rois
 dfs = []
 for year in ['2017', '2018', '2019', '2020']:

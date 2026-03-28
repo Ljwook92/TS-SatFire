@@ -24,10 +24,11 @@ from temporal_models.gru.gru_model import GRUModel
 from temporal_models.lstm.lstm_model import LSTMModel
 from temporal_models.t4fire import t4fire
 from sklearn.metrics import f1_score, jaccard_score
+from support.path_config import get_satfire_root, get_dataset_root, get_checkpoints_root
 
-ROOT_DIR = os.path.expanduser("~/data/SatFire/")
-DATASET_DIR = os.path.join(ROOT_DIR, "dataset")
-CHECKPOINT_DIR = os.path.join(ROOT_DIR, "checkpoints")
+ROOT_DIR = str(get_satfire_root())
+DATASET_DIR = str(get_dataset_root())
+CHECKPOINT_DIR = str(get_checkpoints_root())
 os.makedirs(CHECKPOINT_DIR, exist_ok=True)
 
 root_path = DATASET_DIR
