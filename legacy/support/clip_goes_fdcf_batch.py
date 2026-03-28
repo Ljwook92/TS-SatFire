@@ -168,8 +168,8 @@ def save_mask_and_frp(nc_path, clipped, output_root, fire_id, overwrite):
     transform = build_affine_transform(clipped)
     timestamp = extract_timestamp(nc_path, clipped)
 
-    mask_dir = output_root / fire_id / "mask"
-    frp_dir = output_root / fire_id / "frp"
+    mask_dir = output_root / fire_id / "mask_fixed"
+    frp_dir = output_root / fire_id / "frp_fixed"
     mask_path = mask_dir / f"{timestamp}_mask.tif"
     frp_path = frp_dir / f"{timestamp}_frp.tif"
 
