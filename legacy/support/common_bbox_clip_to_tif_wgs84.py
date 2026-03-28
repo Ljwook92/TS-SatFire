@@ -7,15 +7,14 @@ import numpy as np
 import rasterio
 import xarray as xr
 from pyproj import CRS, Transformer
-from rasterio.transform import from_bounds
 from rasterio.warp import Resampling, reproject
 
 
 def parse_args():
     parser = argparse.ArgumentParser(
         description=(
-            "Clip GOES FDCF NetCDF files using one common max bbox across multiple "
-            "TS-SatFire bbox CSVs, then save mask/frp as WGS84 GeoTIFFs on a common grid."
+            "Clip GOES FDCF NetCDF files, then save mask/frp on each event's "
+            "TS-SatFire VIIRS_Day WGS84 grid."
         )
     )
     parser.add_argument("--goes-root", required=True, help="Root directory of GOES FDCF NetCDF files.")
@@ -25,24 +24,16 @@ def parse_args():
         required=True,
         help="List of bbox CSV paths, e.g. us_fire_2019_bbox.csv us_fire_2020_bbox.csv us_fire_2021_bbox.csv",
     )
+    parser.add_argument(
+        "--ts-root",
+        default="/home/jlc3q/data/SatFire/ts-satfire",
+        help="Root directory of TS-SatFire per-event folders.",
+    )
     parser.add_argument("--output-root", required=True, help="Output root directory.")
     parser.add_argument("--summary-csv", required=True, help="Path to write the summary CSV.")
     parser.add_argument("--overwrite", action="store_true", help="Overwrite existing outputs.")
     parser.add_argument("--limit-events", type=int, default=0, help="Optional limit on total events.")
-    parser.add_argument("--width", type=int, default=256, help="Output raster width.")
-    parser.add_argument("--height", type=int, default=256, help="Output raster height.")
     return parser.parse_args()
-
-
-def km_to_lat_deg(km):
-    return km / 110.574
-
-
-def km_to_lon_deg(km, lat):
-    cos_lat = np.cos(np.radians(lat))
-    if abs(cos_lat) < 1e-8:
-        raise ValueError(f"Longitude conversion unstable at latitude={lat}")
-    return km / (111.320 * cos_lat)
 
 
 def daterange(start_date, end_date):
@@ -54,8 +45,7 @@ def daterange(start_date, end_date):
 
 def infer_year_from_csv_path(csv_path):
     name = Path(csv_path).stem
-    parts = name.split("_")
-    for part in parts:
+    for part in name.split("_"):
         if part.isdigit() and len(part) == 4:
             return part
     raise ValueError(f"Could not infer year from bbox CSV path: {csv_path}")
@@ -70,28 +60,6 @@ def load_rows(csv_paths):
                 row["_year"] = year
                 rows.append(row)
     return rows
-
-
-def compute_common_half_sizes(rows):
-    max_half_width = max(float(row["half_width_km"]) for row in rows)
-    max_half_height = max(float(row["half_height_km"]) for row in rows)
-    return max_half_width, max_half_height
-
-
-def apply_common_bbox(row, common_half_width_km, common_half_height_km):
-    center_lat = float(row["center_lat"])
-    center_lon = float(row["center_lon"])
-    lat_offset = km_to_lat_deg(common_half_height_km)
-    lon_offset = km_to_lon_deg(common_half_width_km, center_lat)
-
-    updated = dict(row)
-    updated["min_lon"] = center_lon - lon_offset
-    updated["max_lon"] = center_lon + lon_offset
-    updated["min_lat"] = center_lat - lat_offset
-    updated["max_lat"] = center_lat + lat_offset
-    updated["common_half_width_km"] = common_half_width_km
-    updated["common_half_height_km"] = common_half_height_km
-    return updated
 
 
 def build_goes_crs(ds):
@@ -149,25 +117,12 @@ def build_source_transform(clipped):
     sat_height = clipped["goes_imager_projection"].perspective_point_height.item()
     x_m = x * sat_height
     y_m = y * sat_height
-    return from_bounds(
-        float(x_m.min()),
-        float(y_m.min()),
-        float(x_m.max()),
-        float(y_m.max()),
-        len(x),
-        len(y),
-    )
 
-
-def build_target_transform(row, width, height):
-    return from_bounds(
-        float(row["min_lon"]),
-        float(row["min_lat"]),
-        float(row["max_lon"]),
-        float(row["max_lat"]),
-        width,
-        height,
-    )
+    x_res = float(x_m[1] - x_m[0])
+    y_res = float(y_m[1] - y_m[0])
+    x_origin = float(x_m[0] - x_res / 2.0)
+    y_origin = float(y_m[0] - y_res / 2.0)
+    return rasterio.Affine(x_res, 0.0, x_origin, 0.0, y_res, y_origin)
 
 
 def list_event_files(goes_root, start_date, end_date):
@@ -209,6 +164,30 @@ def write_geotiff(output_path, array, crs, transform, nodata):
         dst.write(array, 1)
 
 
+def find_target_viirs_day_tif(ts_root, fire_id):
+    viirs_dir = Path(ts_root) / fire_id / "VIIRS_Day"
+    if not viirs_dir.exists():
+        raise FileNotFoundError(f"Missing VIIRS_Day directory for {fire_id}: {viirs_dir}")
+
+    tif_files = sorted(viirs_dir.glob("*.tif"))
+    if not tif_files:
+        raise FileNotFoundError(f"No VIIRS_Day GeoTIFFs found for {fire_id}: {viirs_dir}")
+    return tif_files[0]
+
+
+def read_target_grid(ts_root, fire_id):
+    target_tif = find_target_viirs_day_tif(ts_root, fire_id)
+    with rasterio.open(target_tif) as src:
+        return {
+            "path": str(target_tif),
+            "crs": src.crs,
+            "transform": src.transform,
+            "width": src.width,
+            "height": src.height,
+            "bounds": src.bounds,
+        }
+
+
 def main():
     args = parse_args()
 
@@ -216,49 +195,62 @@ def main():
     if args.limit_events > 0:
         rows = rows[: args.limit_events]
 
-    common_half_width_km, common_half_height_km = compute_common_half_sizes(rows)
-    common_rows = [
-        apply_common_bbox(row, common_half_width_km, common_half_height_km)
-        for row in rows
-    ]
-
-    print(
-        f"Common half sizes (km): width={common_half_width_km}, "
-        f"height={common_half_height_km}"
-    )
-    print(f"Target WGS84 raster size: {args.height} x {args.width}")
+    print(f"Using TS-SatFire target grids from: {args.ts_root}")
 
     summary_rows = []
 
-    for idx, row in enumerate(common_rows, start=1):
+    for idx, row in enumerate(rows, start=1):
         fire_id = row["Id"]
         year = row["_year"]
         start_date = dt.date.fromisoformat(row["start_date"])
         end_date = dt.date.fromisoformat(row["end_date"])
-        event_files = list_event_files(args.goes_root, start_date, end_date)
 
+        try:
+            target_grid = read_target_grid(args.ts_root, fire_id)
+        except Exception as exc:
+            print(f"[ERROR] {fire_id} target grid lookup failed: {exc}")
+            summary_rows.append(
+                {
+                    "year": year,
+                    "Id": fire_id,
+                    "start_date": row["start_date"],
+                    "end_date": row["end_date"],
+                    "input_files": 0,
+                    "saved_files": 0,
+                    "existing_files": 0,
+                    "empty_files": 0,
+                    "error_files": 1,
+                    "target_height": "",
+                    "target_width": "",
+                    "target_tif": "",
+                }
+            )
+            continue
+
+        event_files = list_event_files(args.goes_root, start_date, end_date)
         saved_files = 0
         existing_files = 0
         empty_files = 0
         error_files = 0
 
-        print(f"[EVENT {idx}/{len(common_rows)}] {year} {fire_id} files={len(event_files)}")
+        print(
+            f"[EVENT {idx}/{len(rows)}] {year} {fire_id} files={len(event_files)} "
+            f"target={target_grid['height']}x{target_grid['width']}"
+        )
 
         for nc_path in event_files:
             try:
                 ds = xr.open_dataset(nc_path)
                 clipped = clip_dataset(ds, compute_xy_bounds(ds, row))
-                height = int(clipped.sizes.get("y", 0))
-                width = int(clipped.sizes.get("x", 0))
-                if height == 0 or width == 0:
+                clip_h = int(clipped.sizes.get("y", 0))
+                clip_w = int(clipped.sizes.get("x", 0))
+                if clip_h == 0 or clip_w == 0:
                     ds.close()
                     empty_files += 1
                     continue
 
                 source_crs = build_goes_crs(clipped)
                 source_transform = build_source_transform(clipped)
-                target_crs = "EPSG:4326"
-                target_transform = build_target_transform(row, args.width, args.height)
                 timestamp = extract_timestamp(nc_path, clipped)
 
                 mask_fill = clipped["Mask"].attrs.get("_FillValue", -99)
@@ -266,20 +258,28 @@ def main():
                 if np.issubdtype(mask_src.dtype, np.floating):
                     mask_src = np.where(np.isnan(mask_src), mask_fill, mask_src)
                 mask_src = mask_src.astype(np.int16, copy=False)
-                mask_dst = np.full((args.height, args.width), np.int16(mask_fill), dtype=np.int16)
+                mask_dst = np.full(
+                    (target_grid["height"], target_grid["width"]),
+                    np.int16(mask_fill),
+                    dtype=np.int16,
+                )
 
                 frp_fill = clipped["Power"].attrs.get("_FillValue", -9999.0)
                 frp_src = clipped["Power"].values
                 frp_src = np.where(np.isnan(frp_src), frp_fill, frp_src).astype(np.float32, copy=False)
-                frp_dst = np.full((args.height, args.width), np.float32(frp_fill), dtype=np.float32)
+                frp_dst = np.full(
+                    (target_grid["height"], target_grid["width"]),
+                    np.float32(frp_fill),
+                    dtype=np.float32,
+                )
 
                 reproject(
                     source=mask_src,
                     destination=mask_dst,
                     src_transform=source_transform,
                     src_crs=source_crs,
-                    dst_transform=target_transform,
-                    dst_crs=target_crs,
+                    dst_transform=target_grid["transform"],
+                    dst_crs=target_grid["crs"],
                     src_nodata=np.int16(mask_fill),
                     dst_nodata=np.int16(mask_fill),
                     resampling=Resampling.nearest,
@@ -290,8 +290,8 @@ def main():
                     destination=frp_dst,
                     src_transform=source_transform,
                     src_crs=source_crs,
-                    dst_transform=target_transform,
-                    dst_crs=target_crs,
+                    dst_transform=target_grid["transform"],
+                    dst_crs=target_grid["crs"],
                     src_nodata=np.float32(frp_fill),
                     dst_nodata=np.float32(frp_fill),
                     resampling=Resampling.nearest,
@@ -317,8 +317,20 @@ def main():
                     existing_files += 1
                     continue
 
-                write_geotiff(mask_path, mask_dst, target_crs, target_transform, np.int16(mask_fill))
-                write_geotiff(frp_path, frp_dst, target_crs, target_transform, np.float32(frp_fill))
+                write_geotiff(
+                    mask_path,
+                    mask_dst,
+                    target_grid["crs"],
+                    target_grid["transform"],
+                    np.int16(mask_fill),
+                )
+                write_geotiff(
+                    frp_path,
+                    frp_dst,
+                    target_grid["crs"],
+                    target_grid["transform"],
+                    np.float32(frp_fill),
+                )
                 ds.close()
                 saved_files += 1
 
@@ -337,10 +349,9 @@ def main():
                 "existing_files": existing_files,
                 "empty_files": empty_files,
                 "error_files": error_files,
-                "output_height": args.height,
-                "output_width": args.width,
-                "common_half_width_km": common_half_width_km,
-                "common_half_height_km": common_half_height_km,
+                "target_height": target_grid["height"],
+                "target_width": target_grid["width"],
+                "target_tif": target_grid["path"],
             }
         )
 
@@ -359,10 +370,9 @@ def main():
                 "existing_files",
                 "empty_files",
                 "error_files",
-                "output_height",
-                "output_width",
-                "common_half_width_km",
-                "common_half_height_km",
+                "target_height",
+                "target_width",
+                "target_tif",
             ],
         )
         writer.writeheader()
