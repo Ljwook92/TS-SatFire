@@ -164,22 +164,34 @@ def write_geotiff(output_path, array, crs, transform, nodata):
         dst.write(array, 1)
 
 
-def find_target_viirs_day_tif(ts_root, fire_id):
-    viirs_dir = Path(ts_root) / fire_id / "VIIRS_Day"
-    if not viirs_dir.exists():
-        raise FileNotFoundError(f"Missing VIIRS_Day directory for {fire_id}: {viirs_dir}")
+def find_target_grid_tif(ts_root, fire_id):
+    fire_root = Path(ts_root) / fire_id
+    candidates = [
+        ("VIIRS_Day", fire_root / "VIIRS_Day"),
+        ("FirePred", fire_root / "FirePred"),
+        ("ESRI_LULC", fire_root / "ESRI_LULC"),
+    ]
 
-    tif_files = sorted(viirs_dir.glob("*.tif"))
-    if not tif_files:
-        raise FileNotFoundError(f"No VIIRS_Day GeoTIFFs found for {fire_id}: {viirs_dir}")
-    return tif_files[0]
+    checked = []
+    for source_name, folder in candidates:
+        checked.append(str(folder))
+        if not folder.exists():
+            continue
+        tif_files = sorted(folder.glob("*.tif"))
+        if tif_files:
+            return source_name, tif_files[0]
+
+    raise FileNotFoundError(
+        f"No target grid GeoTIFF found for {fire_id}. Checked: {', '.join(checked)}"
+    )
 
 
 def read_target_grid(ts_root, fire_id):
-    target_tif = find_target_viirs_day_tif(ts_root, fire_id)
+    target_source, target_tif = find_target_grid_tif(ts_root, fire_id)
     with rasterio.open(target_tif) as src:
         return {
             "path": str(target_tif),
+            "source": target_source,
             "crs": src.crs,
             "transform": src.transform,
             "width": src.width,
@@ -222,6 +234,7 @@ def main():
                     "error_files": 1,
                     "target_height": "",
                     "target_width": "",
+                    "target_source": "",
                     "target_tif": "",
                 }
             )
@@ -235,7 +248,8 @@ def main():
 
         print(
             f"[EVENT {idx}/{len(rows)}] {year} {fire_id} files={len(event_files)} "
-            f"target={target_grid['height']}x{target_grid['width']}"
+            f"target={target_grid['height']}x{target_grid['width']} "
+            f"source={target_grid['source']}"
         )
 
         for nc_path in event_files:
@@ -351,6 +365,7 @@ def main():
                 "error_files": error_files,
                 "target_height": target_grid["height"],
                 "target_width": target_grid["width"],
+                "target_source": target_grid["source"],
                 "target_tif": target_grid["path"],
             }
         )
@@ -372,6 +387,7 @@ def main():
                 "error_files",
                 "target_height",
                 "target_width",
+                "target_source",
                 "target_tif",
             ],
         )
