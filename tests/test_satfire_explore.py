@@ -75,6 +75,48 @@ class ExploreTests(unittest.TestCase):
         self.assertEqual(result['status'], 'ndvi_may_already_be_scaled')
         self.assertIsNone(result['array'])
 
+    def test_notebook_plot_recovers_stale_reader(self):
+        import ast
+        import contextlib
+        import io
+        import json
+        from unittest.mock import patch
+        try:
+            import pandas as pd
+            import matplotlib
+            matplotlib.use('Agg', force=True)
+            import matplotlib.pyplot as plt
+        except ImportError:
+            self.skipTest('Notebook plotting dependencies required')
+        notebook = SCRIPTS.parent/'notebooks'/'ts_satfire_two_day_ndvi.ipynb'
+        cells = json.loads(notebook.read_text())['cells']
+        source = next(''.join(c['source']) for c in cells if c['cell_type'] == 'code'
+                      and 'def plot_pair' in ''.join(c['source']))
+        tree = ast.parse(source)
+        tree.body = [n for n in tree.body if isinstance(n, ast.FunctionDef)]
+        namespace = dict(REPO=SCRIPTS.parent, Path=Path, dt=dt, index=self.index,
+                         NDVI_SOURCE='provided', PROVIDED_NDVI_BAND=1,
+                         NDVI_SCALE=1.0, NDVI_OFFSET=0.0,
+                         REFLECTANCE_CONFIRMED=False, PROVIDED_NDVI_RAW_VALID_RANGE=(-1, 1),
+                         BA_BAND=8, BA_RULE='finite', EVENT_ID='DEMO_FIRE', DEMO_MODE=True,
+                         REPORT_DIR=Path(self.tmp.name), np=self.np, pd=pd, plt=plt,
+                         display=lambda *args: None)
+        def obsolete(path, source='provided', band=1, scale=None, offset=None,
+                     reflectance_confirmed=False):
+            raise AssertionError('Stale NDVI reader must not be used')
+        original = self.explore.read_ndvi
+        self.explore.read_ndvi = obsolete
+        namespace['read_ndvi'] = obsolete
+        try:
+            exec(compile(tree, str(notebook), 'exec'), namespace)
+            with contextlib.redirect_stdout(io.StringIO()), patch.object(plt, 'show'):
+                observations, change = namespace['plot_pair'](dt.date(2021, 8, 2))
+            self.assertTrue(all(o['status'] == 'available' for o in observations))
+            self.assertEqual(change['status'], 'observed_increment')
+        finally:
+            self.explore.read_ndvi = original
+            plt.close('all')
+
     def test_ndvi_units_and_reflectance_gate(self):
         date = dt.date(2021, 8, 2)
         p = self.explore.unique_path(self.index, 'FirePred', date)
