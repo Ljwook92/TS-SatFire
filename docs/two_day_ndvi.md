@@ -115,3 +115,24 @@ Jupyter 커널은 파일이 바뀌어도 `from satfire_explore import read_ndvi`
 파일 경로가 다른 저장소를 가리키거나 디스크의 함수가 raw_valid_range를 지원하지 않으면
 명확한 RuntimeError로 업데이트 필요성을 안내합니다. 인자를 지워서 오류를 숨기지 않습니다.
 이 변경을 처음 적용할 때는 최신 노트북을 다시 열고 커널 재시작 후 위에서부터 실행하십시오.
+
+## 논문 Progression Prediction 예시를 고정해서 보기
+
+`notebooks/ts_satfire_paper_fp_example.ipynb`는 arXiv Figure 8 / Scientific Data Figure 11의
+`NM3323810847220210520` 사건을 선택합니다. 실제 CSV/폴더 ID는
+`US_2021_NM3323810847220210520`이며 2021년 FP 시험 분할에 속합니다.
+기존 일반 탐색 노트북은 변경하지 않습니다.
+
+- 기본 EVENT_ID가 고정되고, 입력 길이는 t-1,t 두 날로 유지됩니다.
+- 기본 header 검사는 선택 사건만 수행합니다. 전체 검사는 SCAN_ALL_HEADERS=True로 변경합니다.
+- ANCHOR_DATE=None은 연속 관측이 가능한 첫 날짜를 선택합니다.
+  논문의 D1-D20은 달력 날짜가 없으므로 임의로 날짜를 매핑하지 않습니다.
+- 같은 사건의 실제 날짜 목록, NDVI, I4 열적 밴드, AF/BA 원시 라벨과 첫 20일 I4를 표시합니다.
+- 원 논문의 누적 열적 전처리·crop·SwinUNETR 예측을 재현하는 것이 아닙니다.
+- 이 사건 CSV의 label_sel=0은 legacy의 AF/BA 합집합 정책입니다. BA 증분만 계산하는
+  현재 진단과 동일하다고 주장하지 않습니다. 인코딩 미확정 상태를 자동으로 0으로 바꾸지 않습니다.
+- 결과는 audit_results/paper_fp_example에 저장하여 기존 NDVI 진단 결과와 구분합니다.
+
+출처:
+https://arxiv.org/html/2412.11555v1/figures/pred2.jpeg
+https://www.nature.com/articles/s41597-025-06271-3 (Figure 11)
