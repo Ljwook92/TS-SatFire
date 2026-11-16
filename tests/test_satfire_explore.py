@@ -55,6 +55,26 @@ class ExploreTests(unittest.TestCase):
         self.assertEqual(rows[1]['status'], 'unknown_label_encoding')
         self.assertIsNone(rows[1]['new_pixels'])
 
+    def test_vnp13_raw_units_and_fill_are_restored(self):
+        p = self.explore.unique_path(self.index, 'FirePred', dt.date(2021, 8, 2))
+        with self.rio.open(p, 'r+') as ds:
+            original = ds.read(1)
+            raw = original * 10000
+            raw[0, 0] = -15000
+            ds.write(raw, 1)
+        result = self.explore.read_ndvi(p, scale=0.0001, offset=0,
+                                        raw_valid_range=(-10000, 10000))
+        self.assertEqual(result['status'], 'available')
+        self.assertTrue(self.np.isnan(result['array'][0, 0]))
+        self.assertEqual(result['excluded_raw_pixels'], 1)
+        self.np.testing.assert_allclose(result['array'][1:], original[1:], atol=1e-6)
+
+    def test_already_scaled_values_are_not_scaled_twice(self):
+        p = self.explore.unique_path(self.index, 'FirePred', dt.date(2021, 8, 2))
+        result = self.explore.read_ndvi(p, scale=0.0001)
+        self.assertEqual(result['status'], 'ndvi_may_already_be_scaled')
+        self.assertIsNone(result['array'])
+
     def test_ndvi_units_and_reflectance_gate(self):
         date = dt.date(2021, 8, 2)
         p = self.explore.unique_path(self.index, 'FirePred', date)

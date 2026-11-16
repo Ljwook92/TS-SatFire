@@ -25,9 +25,13 @@ Python (satfire-audit) 커널을 선택합니다. GPU는 필요하지 않습니�
 
 - NDVI_SOURCE='provided': 기본 FirePred 1번 밴드. 전체 27채널 표의 9번과 구분합니다.
   실제 밴드 의미·단위·스케일은 원시값 표와 로더로 확인합니다.
-- NDVI_SCALE=None: 메타데이터의 scale/offset 적용. 크게 범위를 벗어나면 계산을
-  보류하고 `ndvi_scale_or_band_unverified`를 표시합니다. 데이터를 보고 자동으로
-  0~1 정규화하지 않습니다. 근거를 확인한 경우에만 NDVI_SCALE 등을 지정합니다.
+- NDVI_SCALE=0.0001, NDVI_OFFSET=0.0: VNP13A1 원본 10,000배 정수 단위를 복원합니다.
+  근거는 [VNP13 사용자 가이드 Table 12](https://lpdaac.usgs.gov/documents/1372/VNP13_User_Guide_ATBD_V2.1.2.pdf)와
+  현재 FP 로더의 NDVI 채널 평균 약 5110.55입니다. 이는 자동 min-max 정규화가 아닙니다.
+  PROVIDED_NDVI_RAW_VALID_RANGE=(-10000,10000) 밖의 fill 등은 결측으로 제외합니다.
+  이미 실수 NDVI로 변환한 export는 scale=1.0과 raw range=(-1,1)을 사용하십시오.
+  이중 스케일링이 의심되면 `ndvi_may_already_be_scaled`를 표시하며 자동 재추정하지 않습니다.
+  None으로 지정하면 파일 메타데이터를 사용하지만, 메타데이터가 누락된 원시 export에는 부적합합니다.
 - NDVI_SOURCE='computed': 주간 I1/I2가 확인된 반사도이고 스케일이 적용됐는지 검증한
   뒤 REFLECTANCE_CONFIRMED=True를 설정합니다. 복사휘도에 반사도 지수를 무조건 적용하지 않습니다.
 - BA_RULE=None: 라벨 인코딩을 확인할 때까지 unknown. 유한 코드=소실/NaN=비소실이면
@@ -93,3 +97,10 @@ python -m jupyter nbconvert --execute --to notebook \
 ```bash
 python -m unittest discover -s tests -p 'test_*.py' -v
 ```
+
+## 시간 해상도 주의
+
+VNP13A1은 16일 합성 자료를 8일 간격으로 생산하는 제품입니다.
+일별 FirePred 파일의 NDVI가 같을 수 있으며, 값이 같다는 사실이 산불 미확산을 뜻하지 않습니다.
+합성 기간과 실제 배포 시점을 확인하기 전에는 제공 NDVI를 당시 이용 가능한 일별 독립 관측으로
+간주하지 마십시오. NDVI_SCALE 수정과 BA_RULE 확정은 서로 다른 작업입니다.

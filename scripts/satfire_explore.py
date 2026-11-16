@@ -121,16 +121,27 @@ def band_stats(path, band):
 
 
 def read_ndvi(path, source='provided', band=1, scale=None, offset=None,
-              reflectance_confirmed=False):
+              reflectance_confirmed=False, raw_valid_range=None):
     """Returns array or an explicit failure. Never silently normalizes raw radiances."""
     if path is None:
         return dict(array=None, status='missing_or_duplicate_ndvi_file')
     try:
         with rasterio.open(path) as ds:
+            excluded_raw_pixels = 0
             if source == 'provided':
                 raw = ds.read(band, masked=True).astype('float64')
                 applied_scale = ds.scales[band-1] if scale is None else scale
                 applied_offset = ds.offsets[band-1] if offset is None else offset
+                values = raw.compressed()
+                values = values[np.isfinite(values)]
+                if applied_scale == 0.0001 and values.size and np.max(np.abs(values)) <= 1 and np.any(values != 0):
+                    return dict(array=None, status='ndvi_may_already_be_scaled',
+                                note='Values already fit [-1,1]; confirm units and use scale=1 rather than scaling twice.')
+                if raw_valid_range is not None:
+                    lo, hi = raw_valid_range
+                    excluded = np.isfinite(raw.data) & ((raw.data < lo) | (raw.data > hi))
+                    excluded_raw_pixels = int((excluded & ~np.ma.getmaskarray(raw)).sum())
+                    raw = np.ma.masked_where(excluded, raw)
                 arr = (raw * applied_scale + applied_offset).filled(np.nan)
             elif source == 'computed':
                 if not reflectance_confirmed:
@@ -154,6 +165,7 @@ def read_ndvi(path, source='provided', band=1, scale=None, offset=None,
             arr[~finite | outside] = np.nan
             return dict(array=arr, status='available', applied_scale=applied_scale,
                         applied_offset=applied_offset, outside_range_fraction=fraction,
+                        excluded_raw_pixels=excluded_raw_pixels,
                         note='Plausible range is a check, not proof of calibration/cloud quality.')
     except Exception as exc:
         return dict(array=None, status='ndvi_read_error', error=str(exc))
