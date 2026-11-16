@@ -69,7 +69,25 @@ def main():
     parser.add_argument('--metadata-limit', type=int, default=30,
                         help='Evenly spaced metadata samples per modality; 0 = all files')
     parser.add_argument('--inventory-only', action='store_true', help='No rasterio required')
+    parser.add_argument('--task', choices=['all', 'pred'], default='all')
+    repo = Path(__file__).resolve().parents[1]
+    parser.add_argument('--roi-dir', type=Path, default=repo / 'legacy' / 'roi')
+    parser.add_argument('--split-script', type=Path,
+                        default=repo / 'legacy' / 'scripts' / 'dataset_gen_pred.py')
+    parser.add_argument('--check-grids', action='store_true',
+                        help='FP: read candidate input headers and compare grids')
+    parser.add_argument('--check-labels', action='store_true',
+                        help='FP: audit pixels under an explicitly selected BA encoding')
+    parser.add_argument('--ba-band', type=int, help='1-based BA band, verified against actual files')
+    parser.add_argument('--ba-rule', choices=['finite', 'positive'],
+                        help='finite: finite presence codes; positive: positive binary/code values')
     args = parser.parse_args()
+    if args.check_labels and (args.task != 'pred' or args.ba_band is None or args.ba_band < 1 or not args.ba_rule):
+        parser.error('--check-labels requires --task pred, --ba-band and --ba-rule.')
+    if args.check_grids and args.task != 'pred':
+        parser.error('--check-grids requires --task pred.')
+    if args.inventory_only and (args.check_labels or args.check_grids):
+        parser.error('Pixel/grid checks cannot be combined with --inventory-only.')
     if any(n < 1 for n in args.lengths) or args.metadata_limit < 0:
         parser.error('Lengths must be positive; metadata-limit must be nonnegative.')
     root, out = args.root.resolve(), args.out.resolve()
@@ -104,6 +122,15 @@ def main():
             groups[event][modality].append(date)
     if not rows:
         parser.error('No GeoTIFF files found. Check the data path.')
+    if args.task == 'pred':
+        import sys
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from fp_audit import run_fp_audit
+        try:
+            run_fp_audit(root, out, args, rows, rasterio, write_csv, metadata, json_safe)
+        except (ValueError, OSError, SyntaxError) as exc:
+            parser.error(str(exc))
+        return
     write_csv(out / 'inventory.csv', rows, ['event', 'modality', 'date', 'path', 'bytes'])
     event_rows, window_rows, spans = [], [], []
     for event, modalities in sorted(groups.items()):
