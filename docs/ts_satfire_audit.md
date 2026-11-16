@@ -129,3 +129,11 @@ python -m unittest discover -s tests -p 'test_*audit.py' -v
 분할 CSV 교집합, legacy 코드 비실행, AF 사건 제외, 누락/중복 날짜,
 누락 사건 보존, 격자 불일치, 명시적 BA 증분과 미주석 날짜 처리 및 기존 CLI를 검사합니다.
 rasterio가 없으면 GeoTIFF 관련 테스트는 skip됩니다.
+
+## 격자 원인 상세 및 NDVI 노트북
+
+격자 실패는 `grid_differences.csv`에서 크기, CRS 누락/불일치, transform 불일치를
+분리해 확인합니다. summary.json의 grid_failure_reasons는 고유 파일 쌍 기준이며
+입력 윈도 실패 건수와 다릅니다. issues.json에도 격자 실패 요약이 포함됩니다.
+
+전체 영상 크기 조사와 이틀 입력 NDVI 비교는 [노트북 안내](two_day_ndvi.md)를 참고하십시오.

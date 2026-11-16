@@ -124,6 +124,12 @@ class FPAuditTests(unittest.TestCase):
         item = next(x for x in summary['window_counts'] if x['split'] == 'train' and x['input_days'] == 1)
         self.assertEqual(item['passing_candidates'], 0)
         self.assertEqual(item['status_counts']['grid_mismatch_or_missing_crs'], 2)
+        self.assertIn('transform_mismatch', summary['grid_failure_reasons'])
+        self.assertNotIn('shape_mismatch', summary['grid_failure_reasons'])
+        with (out/'grid_differences.csv').open() as f:
+            differences = list(csv.DictReader(f))
+        self.assertTrue(differences)
+        self.assertTrue(all(d['reference_width'] == d['candidate_width'] for d in differences))
 
     def test_label_checks_require_explicit_encoding(self):
         result = subprocess.run([sys.executable, str(SCRIPT), '--task', 'pred',

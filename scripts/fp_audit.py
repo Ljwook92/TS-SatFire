@@ -103,7 +103,7 @@ def run_fp_audit(root, out, args, rows, rasterio, write_csv, metadata, json_safe
     for row in selected:
         if row['date']:
             index[row['event_id']][row['modality']][dt.date.fromisoformat(row['date'])].append(root/row['path'])
-    headers = {}
+    headers, grid_differences = {}, {}
     def header(path):
         if path not in headers:
             try:
@@ -115,6 +115,27 @@ def run_fp_audit(root, out, args, rows, rasterio, write_csv, metadata, json_safe
         return headers[path]
     def same_grid(a, b):
         return a is not None and b is not None and a[0] is not None and a[0] == b[0] and a[2:4] == b[2:4] and a[1].almost_equals(b[1])
+    def record_grid_difference(event_id, ref_path, path):
+        a, b = header(ref_path), header(path)
+        if a is None or b is None or same_grid(a, b):
+            return
+        reasons = []
+        if a[2:4] != b[2:4]:
+            reasons.append('shape_mismatch')
+        if a[0] is None:
+            reasons.append('reference_crs_missing')
+        if b[0] is None:
+            reasons.append('candidate_crs_missing')
+        if a[0] is not None and b[0] is not None and a[0] != b[0]:
+            reasons.append('crs_mismatch')
+        if not a[1].almost_equals(b[1]):
+            reasons.append('transform_mismatch')
+        grid_differences[(str(ref_path), str(path))] = dict(
+            event_id=event_id, reference_path=str(ref_path), candidate_path=str(path),
+            reasons=';'.join(reasons), reference_width=a[2], reference_height=a[3],
+            candidate_width=b[2], candidate_height=b[3], reference_crs=str(a[0]),
+            candidate_crs=str(b[0]), reference_transform=str(tuple(a[1])),
+            candidate_transform=str(tuple(b[1])))
     event_rows, windows, labels = [], [], []
     split_spans = defaultdict(list)
     for event_id, record in sorted(records.items()):
@@ -182,6 +203,8 @@ def run_fp_audit(root, out, args, rows, rasterio, write_csv, metadata, json_safe
                         row['status'] = 'insufficient_input_bands'
                     elif not same_grid(ref, ref) or any(not same_grid(ref, header(p)) for p, _ in paths):
                         row['status'] = 'grid_mismatch_or_missing_crs'
+                        for p, _ in paths:
+                            record_grid_difference(event_id, day[target][0], p)
                     else:
                         row['status'] = 'grid_checked_candidate'
                         if args.check_labels:
@@ -224,6 +247,16 @@ def run_fp_audit(root, out, args, rows, rasterio, write_csv, metadata, json_safe
                      'status', 'grid_checked', 'label_checked', 'compared_pixels',
                      'newly_burned_pixels', 'shrinking_ba_pixels', 'missing_night_days']
     write_csv(out/'windows.csv', windows, window_fields)
+    grid_fields = ['event_id', 'reference_path', 'candidate_path', 'reasons',
+                   'reference_width', 'reference_height', 'candidate_width', 'candidate_height',
+                   'reference_crs', 'candidate_crs', 'reference_transform', 'candidate_transform']
+    write_csv(out/'grid_differences.csv', grid_differences.values(), grid_fields)
+    grid_reason_counts = Counter(reason for item in grid_differences.values()
+                                 for reason in item['reasons'].split(';'))
+    if grid_differences:
+        issues.append(dict(issue='grid_alignment_failures',
+                           unique_file_pairs=len(grid_differences),
+                           reason_counts=dict(grid_reason_counts), details='grid_differences.csv'))
     totals = []
     good = {'file_presence_candidate', 'grid_checked_candidate', 'encoding_checked_candidate'}
     for split in ['train', 'val', 'test']:
@@ -242,6 +275,7 @@ def run_fp_audit(root, out, args, rows, rasterio, write_csv, metadata, json_safe
                    observed_split_counts=dict(Counter(e['split'] for e in event_rows if e['observed_day_count'])),
                    observation_span_by_split={s: dict(mean=statistics.mean(v), median=statistics.median(v), count=len(v)) for s, v in split_spans.items()},
                    window_counts=totals, issue_count=len(issues), metadata_samples=len(sample_meta),
+                   grid_failure_unique_pairs=len(grid_differences), grid_failure_reasons=dict(grid_reason_counts),
                    label_protocol=dict(checked=args.check_labels, source='provided_BA_consecutive_increment',
                                        band=args.ba_band, rule=args.ba_rule,
                                        note='Explicit BA increment audit, not an exact reproduction of legacy cumulative AF/union labels.'),
