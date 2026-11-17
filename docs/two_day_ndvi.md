@@ -127,10 +127,21 @@ Jupyter 커널은 파일이 바뀌어도 `from satfire_explore import read_ndvi`
 - 기본 header 검사는 선택 사건만 수행합니다. 전체 검사는 SCAN_ALL_HEADERS=True로 변경합니다.
 - ANCHOR_DATE=None은 연속 관측이 가능한 첫 날짜를 선택합니다.
   논문의 D1-D20은 달력 날짜가 없으므로 임의로 날짜를 매핑하지 않습니다.
-- 같은 사건의 실제 날짜 목록, NDVI, I4 열적 밴드, AF/BA 원시 라벨과 첫 20일 I4를 표시합니다.
+- 같은 사건의 실제 날짜 목록, NDVI, 누적 화재 및 신규 영역과 첫 20일 I4를 표시합니다.
+  AF/BA 원시값 그림은 SHOW_RAW_LABEL_DIAGNOSTICS=True로 켜는 보조 진단입니다.
 - 원 논문의 누적 열적 전처리·crop·SwinUNETR 예측을 재현하는 것이 아닙니다.
-- 이 사건 CSV의 label_sel=0은 legacy의 AF/BA 합집합 정책입니다. BA 증분만 계산하는
-  현재 진단과 동일하다고 주장하지 않습니다. 인코딩 미확정 상태를 자동으로 0으로 바꾸지 않습니다.
+- 이 사건 CSV의 label_sel=0은 AF/BA 합집합, 1은 AF만 사용합니다.
+  scripts/fp_progression.py는 ROI 시작일부터 누적 C(t)를 만들고
+  C(t+1) & ~C(t)를 다음 날 신규 기록 영역으로 표시합니다.
+- legacy PredDatasetProcessor는 raw float에 logical_or를 적용하여 NaN도 True로 처리합니다.
+  보정 진단에서는 유한한 0이 아닌 값만 기록 화재로 사용합니다.
+  LABEL_NAN_POLICY='no_detection'은 NaN을 '기록 탐지 없음'으로 취급하는 명시적 가정입니다.
+  이는 실제 비소실의 확인이나 순수한 신규 소실 정답이 아닙니다.
+  원본 논리식의 literal_legacy_pixels와 보정 누적 픽셀 수를 함께 보고합니다.
+- BA 전체 NaN은 표기하며, AF 전체 결측·누락 날짜/밴드·격자 불일치 이후는 누적 이력 불명입니다.
+  no_new_recorded_fire_pixels는 유효한 기록에서 신규 0이며 물리적 무확산을 보장하지 않습니다.
+- 원본의 [128:384,128:384] crop 및 윈도우 상태 처리 대신 native 전체 격자의 날짜순 누적입니다.
+  학습 벤치마크를 정확히 재현한 결과나 모델 예측으로 해석하지 마십시오.
 - 결과는 audit_results/paper_fp_example에 저장하여 기존 NDVI 진단 결과와 구분합니다.
 
 출처:
