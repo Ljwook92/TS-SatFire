@@ -79,3 +79,7 @@ The first version is intentionally conservative:
 - add retrieval over `knowledge/`, experiment logs, and script documentation
 - expose legacy script outputs as normalized metrics and artifacts
 - add reflection and retry strategies based on evaluator feedback
+
+## Kriging and logistic GAM pilot
+
+See [HPC setup and scope](notebooks/kriging_gam/README_HPC.md) and the [experiment notebook](notebooks/kriging_gam/satfire_kriging_gam.ipynb) for the NM332 single-event exploratory progression experiment. Synthetic end-to-end validation is complete; real HPC data inspection and execution remain pending.
