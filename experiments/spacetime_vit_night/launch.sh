@@ -3,7 +3,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 mode=${1:-interactive}
 case "$mode" in
-  interactive|batch) ;;
+  interactive|batch|snapshot) ;;
   *) echo 'Usage: bash launch.sh interactive|batch [existing run]' >&2; exit 2 ;;
 esac
 export TS_SATFIRE_RAW_ROOT=${TS_SATFIRE_RAW_ROOT:-/home/$USER/data/SatFire/ts-satfire}
@@ -26,6 +26,9 @@ else
   echo "${VIT_EPOCHS:-100} ${VIT_BATCH:-1}" > "$run/settings"
 fi
 echo "Run: $run"
+if [[ "$mode" == snapshot ]]; then
+  exit 0
+fi
 if [[ "$mode" == batch ]]; then
   sbatch --job-name=vit-night --partition="${SATFIRE_GPU_PARTITION:-gpu}" \
     --gres="${VIT_GRES:-gpu:1}" --cpus-per-task=4 --mem=24G \

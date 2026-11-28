@@ -34,7 +34,8 @@ def window_rows(cache, roles, protocol):
 
 
 class Windows(Dataset):
-    def __init__(self, cache, roles, protocol):
+    def __init__(self, cache, roles, protocol, day_only=False):
+        self.day_only = day_only
         self.cache = cache
         self.windows = window_rows(cache, roles, protocol)
         with np.load(cache/'norm.npz') as f:
@@ -60,11 +61,15 @@ class Windows(Dataset):
             x[:,t,:13] = np.where(np.isfinite(scaled),scaled,0)
             x[:,t,13] = np.isfinite(a[:,0])
             x[:,t,14] = np.isfinite(a[:,11:13]).any(1)
+        if self.day_only:
+            # Keep parameter shapes, day features, labels and pixel support fixed.
+            x[:,:,11:13] = 0
+            x[:,:,14] = 0
         return torch.from_numpy(x), torch.from_numpy(labels), event, role, dates
 
 
 def loader(args, roles, protocol, epoch=0):
-    return DataLoader(Windows(args.cache, roles, protocol), batch_size=args.batch,
+    return DataLoader(Windows(args.cache, roles, protocol, args.day_only), batch_size=args.batch,
                       shuffle=protocol=='train', num_workers=args.workers,
                       generator=torch.Generator().manual_seed(4200+epoch))
 
@@ -125,10 +130,19 @@ def fit(args):
     history, first, best, age = [], 1, -1., 0
     if ckpt.exists():
         s = torch.load(ckpt,map_location=args.device,weights_only=True)
+        if s.get('day_only',False) != args.day_only:
+            raise ValueError('Checkpoint and requested input modes differ')
         net.load_state_dict(s['model'])
         opt.load_state_dict(s['opt'])
         history, best, age = s['history'], s['best'], s['age']
         first = len(history)+1
+    if args.day_only and not args.smoke:
+        train_windows = window_rows(args.cache,['train'],'train')
+        val_windows = window_rows(args.cache,['val'],'paper')
+        sizes = (len(train_windows), len({w[0] for w in train_windows}),
+                 len(val_windows), len({w[0] for w in val_windows}))
+        if sizes != (2252,124,73,13):
+            raise ValueError(f'Unexpected paired train/validation cohort: {sizes}')
     for epoch in range(first,args.epochs+1):
         if age>=args.patience:
             break
@@ -158,11 +172,11 @@ def fit(args):
         age += 1
         if measure>best:
             best, age = measure, 0
-            save(dict(model=net.state_dict(),epoch=epoch),args.run/'best.pt')
+            save(dict(model=net.state_dict(),epoch=epoch,day_only=args.day_only),args.run/'best.pt')
         history.append(dict(epoch=epoch,loss=float(np.mean(losses)),
                             af_iou=float(metrics.AF),ba_iou=float(metrics.BA),threshold=.5))
         save(dict(model=net.state_dict(),opt=opt.state_dict(),history=history,
-                  best=best,age=age),ckpt)
+                  best=best,age=age,day_only=args.day_only),ckpt)
         pd.DataFrame(history).to_csv(args.run/'validation.csv',index=False)
         print(history[-1],flush=True)
     (args.run/'fit_done').touch()
@@ -171,6 +185,8 @@ def fit(args):
 def evaluate(args):
     net = NightViT().to(args.device)
     ck = torch.load(args.run/'best.pt',map_location='cpu',weights_only=True)
+    if ck.get('day_only',False) != args.day_only:
+        raise ValueError('Evaluate using the same inputs as the checkpoint')
     net.load_state_dict(ck['model'])
     paper = score(net,args,['test_af','test_ba'],'paper',True)
     dense = score(net,args,['test_af'],'dense',True)
@@ -202,6 +218,7 @@ if __name__ == '__main__':
     p.add_argument('--batch',type=int,default=1)
     p.add_argument('--device',choices=['cpu','cuda'],default='cuda')
     p.add_argument('--workers',type=int,default=0)
+    p.add_argument('--day-only', action='store_true')
     p.add_argument('--smoke',action='store_true')
     args = p.parse_args()
     if args.device=='cpu':
