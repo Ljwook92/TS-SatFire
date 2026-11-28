@@ -32,16 +32,25 @@ if [[ "$mode" == report ]]; then
 fi
 mkdir -p "$day"
 # Model, loss and data come from the chosen night snapshot. Only the loader gains a mask.
-if ! cmp -s "$night/code/window_run.py" window_run.py; then
+trainer=window_run.py
+if ! cmp -s "$night/code/window_run.py" "$trainer"; then
   old=$(sha256sum "$night/code/window_run.py" | cut -d' ' -f1)
-  [[ "$old" == 6f1e720c21f5bd78fdc0a3d80a963a1fbb8ec3509cddbefbad51a8e879f5838f ]] || {
-    echo 'Unrecognized night trainer. Compare implementations before pairing.' >&2; exit 2; }
+  case "$old" in
+    6f1e720c21f5bd78fdc0a3d80a963a1fbb8ec3509cddbefbad51a8e879f5838f|c49a65486c4a30db1d46552b13815ab6b246902d3465d96d395e0aed2034c0bb)
+      # Pair historical snapshots with the original, four-slot day runner.
+      trainer=$(mktemp)
+      trap 'rm -f "$trainer"' EXIT
+      git show df9cee2b7f2b975e327c9d95d4382827165aa372:experiments/spacetime_vit_night/window_run.py > "$trainer" ;;
+    *) echo 'Unrecognized night trainer.' >&2; exit 2 ;;
+  esac
 fi
 for script in window_run.py compare_af.py day_worker.sh; do
+  source=$script
+  if [[ "$script" == window_run.py ]]; then source=$trainer; fi
   if [[ -e "$day/$script" ]]; then
-    cmp "$script" "$day/$script"
+    cmp "$source" "$day/$script"
   else
-    cp "$script" "$day/$script"
+    cp "$source" "$day/$script"
   fi
 done
 job_opts=(--job-name=vit-day-control)

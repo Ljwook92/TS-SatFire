@@ -1,4 +1,4 @@
-"""Joint AF/BA training and publication-style four-slot foreground IoU."""
+"""Joint AF/BA training and publication-style multi-slot foreground IoU."""
 import argparse
 import os
 from pathlib import Path
@@ -12,32 +12,32 @@ from night_model import NightViT
 from run import objective, save
 
 
-def window_rows(cache, roles, protocol):
+def window_rows(cache, roles, protocol, ts=4):
     table = pd.read_csv(cache/'manifest.csv', dtype={'event':str})
     windows = []
     for event, rows in table[table.role.isin(roles)].groupby('event'):
         rows = list(rows.sort_values('date').itertuples())
         n = len(rows)
-        if n < 4:
+        if n < ts:
             if rows[0].role != 'train':
                 raise ValueError(f'Incomplete evaluation sequence: {event}')
-            windows.append((event, rows[0].role, [None]*(4-n)+rows))
+            windows.append((event, rows[0].role, [None]*(ts-n)+rows))
             continue
         if protocol == 'dense':
-            starts = range(n-3)
+            starts = range(n-ts+1)
         else:
-            stride = 1 if protocol == 'train' else 4
+            stride = 1 if protocol == 'train' else ts
             # The release right-aligns its last window, including repeated tails.
-            starts = [min(i,n-4) for i in range(0,n,stride)]
-        windows.extend((event, rows[0].role, rows[i:i+4]) for i in starts)
+            starts = [min(i,n-ts) for i in range(0,n,stride)]
+        windows.extend((event, rows[0].role, rows[i:i+ts]) for i in starts)
     return windows
 
 
 class Windows(Dataset):
-    def __init__(self, cache, roles, protocol, day_only=False):
+    def __init__(self, cache, roles, protocol, day_only=False, ts=4):
         self.day_only = day_only
         self.cache = cache
-        self.windows = window_rows(cache, roles, protocol)
+        self.windows = window_rows(cache, roles, protocol, ts)
         with np.load(cache/'norm.npz') as f:
             self.mu = f['mu'][:,:,None,None]
             self.sd = f['sd'][:,:,None,None]
@@ -47,8 +47,8 @@ class Windows(Dataset):
 
     def __getitem__(self, idx):
         event, role, frames = self.windows[idx]
-        x = np.zeros((2,4,15,256,256),dtype='f4')
-        labels = np.zeros((4,4,256,256),bool)  # AF, BA, known AF, known BA x time
+        x = np.zeros((2,len(frames),15,256,256),dtype='f4')
+        labels = np.zeros((4,len(frames),256,256),bool)  # AF, BA, known AF, known BA x time
         dates = []
         for t, row in enumerate(frames):
             dates.append(row.date if row is not None else '')
@@ -69,7 +69,7 @@ class Windows(Dataset):
 
 
 def loader(args, roles, protocol, epoch=0):
-    return DataLoader(Windows(args.cache, roles, protocol, args.day_only), batch_size=args.batch,
+    return DataLoader(Windows(args.cache, roles, protocol, args.day_only, args.ts), batch_size=args.batch,
                       shuffle=protocol=='train', num_workers=args.workers,
                       generator=torch.Generator().manual_seed(4200+epoch))
 
@@ -124,24 +124,25 @@ def summarize(frames):
 
 def fit(args):
     torch.manual_seed(4200)
-    net = NightViT().to(args.device)
+    net = NightViT(ts=args.ts).to(args.device)
     opt = torch.optim.AdamW(net.parameters(),lr=.0003,weight_decay=.01)
     ckpt = args.run/'last.pt'
     history, first, best, age = [], 1, -1., 0
     if ckpt.exists():
         s = torch.load(ckpt,map_location=args.device,weights_only=True)
-        if s.get('day_only',False) != args.day_only:
+        if (s.get('day_only',False), s.get('ts',4)) != (args.day_only, args.ts):
             raise ValueError('Checkpoint and requested input modes differ')
         net.load_state_dict(s['model'])
         opt.load_state_dict(s['opt'])
         history, best, age = s['history'], s['best'], s['age']
         first = len(history)+1
-    if args.day_only and not args.smoke:
-        train_windows = window_rows(args.cache,['train'],'train')
-        val_windows = window_rows(args.cache,['val'],'paper')
+    if not args.smoke:
+        train_windows = window_rows(args.cache,['train'],'train',args.ts)
+        val_windows = window_rows(args.cache,['val'],'paper',args.ts)
         sizes = (len(train_windows), len({w[0] for w in train_windows}),
                  len(val_windows), len({w[0] for w in val_windows}))
-        if sizes != (2252,124,73,13):
+        expected = {2:(2254,124,141,13), 4:(2252,124,73,13), 6:(2233,124,51,13)}
+        if sizes != expected[args.ts]:
             raise ValueError(f'Unexpected paired train/validation cohort: {sizes}')
     for epoch in range(first,args.epochs+1):
         if age>=args.patience:
@@ -172,20 +173,20 @@ def fit(args):
         age += 1
         if measure>best:
             best, age = measure, 0
-            save(dict(model=net.state_dict(),epoch=epoch,day_only=args.day_only),args.run/'best.pt')
+            save(dict(model=net.state_dict(),epoch=epoch,day_only=args.day_only,ts=args.ts),args.run/'best.pt')
         history.append(dict(epoch=epoch,loss=float(np.mean(losses)),
                             af_iou=float(metrics.AF),ba_iou=float(metrics.BA),threshold=.5))
         save(dict(model=net.state_dict(),opt=opt.state_dict(),history=history,
-                  best=best,age=age,day_only=args.day_only),ckpt)
+                  best=best,age=age,day_only=args.day_only,ts=args.ts),ckpt)
         pd.DataFrame(history).to_csv(args.run/'validation.csv',index=False)
         print(history[-1],flush=True)
     (args.run/'fit_done').touch()
 
 
 def evaluate(args):
-    net = NightViT().to(args.device)
+    net = NightViT(ts=args.ts).to(args.device)
     ck = torch.load(args.run/'best.pt',map_location='cpu',weights_only=True)
-    if ck.get('day_only',False) != args.day_only:
+    if (ck.get('day_only',False), ck.get('ts',4)) != (args.day_only, args.ts):
         raise ValueError('Evaluate using the same inputs as the checkpoint')
     net.load_state_dict(ck['model'])
     paper = score(net,args,['test_af','test_ba'],'paper',True)
@@ -194,7 +195,8 @@ def evaluate(args):
     events, totals = summarize(frames)
     if not args.smoke:
         af = events.query("task=='AF'")
-        for protocol, slots in [('paper',12),('dense',28)]:
+        for protocol, slots in [('paper', ((10+args.ts-1)//args.ts)*args.ts),
+                                ('dense', (11-args.ts)*args.ts)]:
             group = af[af.protocol==protocol]
             assert len(group)==17 and group.slot_maps.eq(slots).all()
         assert len(events.query("task=='BA' and protocol=='paper'"))==24
@@ -213,6 +215,7 @@ if __name__ == '__main__':
     p.add_argument('stage',choices=['fit','evaluate'])
     for name in ('run','cache'):
         p.add_argument('--'+name,required=True,type=Path)
+    p.add_argument('--ts',type=int,choices=(2,4,6),default=4)
     p.add_argument('--epochs',type=int,default=100)
     p.add_argument('--patience',type=int,default=12)
     p.add_argument('--batch',type=int,default=1)

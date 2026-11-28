@@ -31,3 +31,24 @@ summary.csv contains the paired protocols; read the paper/AF/event_macro_iou cel
 Run `bash day_control.sh batch` from this directory on Hellbender. A single existing night run is reused. If none exists the launcher starts the night run and schedules its day control. With multiple runs pass the desired full run directory as the second argument. The interactive mode uses the current GPU allocation. The day fit starts from seed 4200 with the same network, cache, masks, window order, epoch limit and validation selection rule. In both AF and BA input streams, only the two standardized night channels and their availability indicator are clamped to zero throughout fitting, validation and testing. Day checkpoints live in the night run's day_control directory. The fixed validation rule may select different best epochs for the two arms.
 
 The official AF comparison pairs the 204 slot maps at cutoff 0.5 and checks the paired keys, whole-crop support, truth counts and original summaries. Counts include repeated slot occurrences. Run `bash day_control.sh report` to print the paired metrics after both evaluations finish. day_control/af_comparison.csv contains results for each arm and night minus day, and af_comparison_by_event.csv contains the 17 event breakdown.
+
+### Two-, four- and six-observation AF/BA comparison
+
+Pass the completed four-slot night run (with its day control) to
+`bash lengths.sh batch /absolute/path/to/night-run`. Four GPU array tasks fit
+independent two- and six-slot models with and without night I4/I5. They share
+the four-slot experiment's cache, masks, training normalization, seed, epoch
+budget, batch size and validation checkpoint rule. Repeating the command
+resumes incomplete jobs using their last fully saved epoch. Use
+`bash lengths.sh interactive /absolute/path/to/night-run` for serial execution
+on an already allocated GPU. The new results are in `lengths_2_4_6`.
+
+After evaluation, `bash lengths.sh report /absolute/path/to/night-run` writes
+`comparison.csv`. The paper cohort scores each slot at 0.5, including overlapping
+tail windows. The same_dates cohort scores each event-date once using its earliest
+ending paper window; both arms share masks and all six configurations must cover
+identical event-dates. The task is retrospective mapping and attention can use
+later slots within a window. TS counts successive available images. Some event
+series have missing calendar dates. BA input maps retain cumulative features
+through each image date even with short windows. The reference column uses
+[SwinUNETR-3D, Table 5](https://pmc.ncbi.nlm.nih.gov/articles/PMC12630597/#Tab5).
